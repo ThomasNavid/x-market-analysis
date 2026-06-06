@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    container_name: xmarket-db
+    environment:
+      POSTGRES_USER: xmarket
+      POSTGRES_PASSWORD: xmarket
+      POSTGRES_DB: xmarket
+    ports:
+      - "5432:5432"
+    volumes:
+      - xmarket_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xmarket"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  xmarket_pgdata:

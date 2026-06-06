@@ -1,0 +1,35 @@
+# Secrets — NEVER commit these
+.env
+*.env
+!.env.example
+.schwab_token.json
+*_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs / uv
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data dumps / local artifacts
+data/
+*.csv
+*.parquet
+*.sqlite
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
