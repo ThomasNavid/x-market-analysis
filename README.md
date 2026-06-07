@@ -65,7 +65,8 @@ uv run xmarket schwab-login
 
 # 5. Ingest data
 uv run xmarket ingest-prices --days 30  # daily OHLCV for your watchlist (Schwab)
-uv run xmarket ingest-posts       # X posts mentioning your watchlist
+uv run xmarket x-login                  # one-time X OAuth login for your following feed
+uv run xmarket ingest-posts --source following --max-posts 100
 uv run xmarket enrich             # ticker extraction + Haiku sentiment (cached)
 
 # 6. Backtest a signal
@@ -85,7 +86,11 @@ All config is loaded from `.env` via `pydantic-settings`. Copy `.env.example` an
 | `SCHWAB_APP_KEY`    | Schwab developer app key (from developer.schwab.com) |
 | `SCHWAB_APP_SECRET` | Schwab developer app secret                  |
 | `SCHWAB_CALLBACK_URL` | OAuth callback URL — must match your Schwab app exactly |
-| `X_BEARER_TOKEN`    | X API v2 bearer token (usage-based)          |
+| `X_BEARER_TOKEN`    | X API v2 bearer token for optional public search |
+| `X_CLIENT_ID`       | X OAuth 2.0 client ID for following-feed auth |
+| `X_CLIENT_SECRET`   | X OAuth 2.0 client secret, if your app uses one |
+| `X_REDIRECT_URI`    | X OAuth redirect URI; must match developer portal |
+| `X_USER_TOKEN_PATH` | Local cached X user token path               |
 | `ANTHROPIC_API_KEY` | For Claude Haiku sentiment scoring           |
 | `WATCHLIST`         | Comma-separated tickers to track             |
 | `API_KEYS`          | Comma-separated API keys for the FastAPI auth|

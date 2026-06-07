@@ -36,7 +36,9 @@ Your project's own commands. `xmarket` exists because of the `[project.scripts]`
 | `uv run xmarket migrate-status` | Show unapplied SQL migrations. | ✅ |
 | `uv run xmarket schwab-login` | One-time Schwab OAuth login; caches a refreshable token. | ✅ |
 | `uv run xmarket ingest-prices --days 30` | Fetch daily OHLCV price data from Schwab into the `prices` table. | ✅ |
-| `uv run xmarket ingest-posts` | Fetch X posts mentioning the watchlist into `posts`/`authors`. | 🚧 Step 3 |
+| `uv run xmarket x-login` | One-time X OAuth login; caches a user token for your following feed. | ✅ |
+| `uv run xmarket ingest-posts --source following --max-posts 100` | Fetch your reverse-chronological X following feed into `posts`/`authors`. | ✅ |
+| `uv run xmarket ingest-posts --source search --max-posts 100` | Optional public cashtag search mode. | ✅ |
 | `uv run xmarket enrich` | Extract tickers + score sentiment (Claude Haiku) for ingested posts. | 🚧 Steps 4–5 |
 | `uv run xmarket backtest --signal <name> --horizon <N>` | Backtest a signal over price history. | 🚧 Step 6 |
 | `uv run xmarket serve` | Run the FastAPI server (docs at http://localhost:8000/docs). | 🚧 Step 7 |
@@ -89,7 +91,61 @@ This project uses plain PostgreSQL files in `migrations/` so you can learn the S
 
 ---
 
-## 5. Tests, linting, type-checking
+## 5. PostgreSQL essentials (psql + SQL)
+
+New to Postgres? This is the survival kit. First, open a SQL shell **inside** the database container:
+
+```bash
+docker exec -it xmarket-db psql -U xmarket -d xmarket
+```
+
+You'll get a `xmarket=#` prompt. Everything below is typed at that prompt.
+
+### psql meta-commands (start with `\`, no semicolon needed)
+| Command | What it does |
+|---------|--------------|
+| `\dt` | List all tables. |
+| `\d prices` | Describe one table — its columns, types, indexes. |
+| `\d+ prices` | Same, but with extra detail (sizes, comments). |
+| `\l` | List all databases. |
+| `\dn` | List schemas. |
+| `\df` | List functions. |
+| `\dv` | List views. |
+| `\di` | List indexes. |
+| `\du` | List users/roles and their permissions. |
+| `\x` | Toggle "expanded" display — great for wide rows (each column on its own line). |
+| `\timing` | Toggle showing how long each query took. |
+| `\conninfo` | Show what you're connected to (db, user, host). |
+| `\e` | Open the last query in an editor (for multi-line edits). |
+| `\?` | Help on all `\` meta-commands. |
+| `\h SELECT` | SQL syntax help for a specific command (e.g. `SELECT`). |
+| `\q` | Quit the shell. |
+
+### Everyday SQL (end every statement with a `;`)
+| Command | What it does |
+|---------|--------------|
+| `SELECT * FROM prices LIMIT 10;` | Peek at the first 10 rows. |
+| `SELECT count(*) FROM prices;` | How many rows are in the table. |
+| `SELECT * FROM prices WHERE symbol = 'AAPL';` | Filter rows (text values use single quotes). |
+| `SELECT * FROM prices ORDER BY date DESC LIMIT 5;` | Newest 5 rows. |
+| `SELECT symbol, count(*) FROM prices GROUP BY symbol;` | Count rows per symbol. |
+| `SELECT DISTINCT symbol FROM prices;` | List the unique symbols. |
+| `INSERT INTO authors (id, handle) VALUES ('123', 'someone');` | Add a row. |
+| `UPDATE posts SET source = 'x' WHERE id = 1;` | Change existing rows (always include a `WHERE`!). |
+| `DELETE FROM posts WHERE id = 1;` | Remove rows (always include a `WHERE`!). |
+
+> ⚠️ **`UPDATE` and `DELETE` without a `WHERE` clause change every row.** When unsure, run a
+> `SELECT` with the same `WHERE` first to see exactly which rows you'd affect.
+
+### Quick one-off queries without entering the shell
+Add `-c` to run a single statement and exit (handy in scripts):
+```bash
+docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM prices;'
+```
+
+---
+
+## 6. Tests, linting, type-checking
 
 | Command | What it does |
 |---------|--------------|
@@ -104,7 +160,7 @@ This project uses plain PostgreSQL files in `migrations/` so you can learn the S
 
 ---
 
-## 6. Git basics (public GitHub project)
+## 7. Git basics (public GitHub project)
 
 | Command | What it does |
 |---------|--------------|

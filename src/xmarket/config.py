@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     # X (Twitter) API
     x_bearer_token: str = ""
+    x_client_id: str = ""
+    x_client_secret: str = ""
+    x_redirect_uri: str = "http://127.0.0.1:8001/x/callback"
+    x_user_token_path: str = ".x_user_token.json"
 
     # Anthropic / sentiment
     anthropic_api_key: str = ""

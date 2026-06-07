@@ -2,12 +2,15 @@
 
 from typing import Annotated
 
+import httpx
 import typer
 
 from xmarket.config import settings
 from xmarket.db.migrations import apply_pending_migrations, pending_migrations
+from xmarket.ingest.posts import ingest_home_timeline_posts, ingest_recent_posts
 from xmarket.ingest.prices import create_schwab_client_from_login
 from xmarket.ingest.prices import ingest_prices as ingest_prices_job
+from xmarket.ingest.x_client import run_x_user_login
 
 app = typer.Typer(help="x-market-analysis command-line interface.")
 
@@ -20,6 +23,7 @@ def info() -> None:
     typer.echo(f"Model     : {settings.sentiment_model}")
     typer.echo(f"Schwab    : {'set' if settings.schwab_app_key else 'MISSING'}")
     typer.echo(f"X token   : {'set' if settings.x_bearer_token else 'MISSING'}")
+    typer.echo(f"X client  : {'set' if settings.x_client_id else 'MISSING'}")
     typer.echo(f"Anthropic : {'set' if settings.anthropic_api_key else 'MISSING'}")
 
 
@@ -100,10 +104,127 @@ def ingest_prices(
     typer.echo(f"Upserted {count} price rows for {', '.join(ticker_list)}")
 
 
+@app.command("x-login")
+def x_login() -> None:
+    """Run the one-time X OAuth login and cache a user token."""
+    try:
+        run_x_user_login()
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except httpx.HTTPStatusError as exc:
+        typer.secho(
+            f"X OAuth token exchange failed: {exc.response.status_code} {exc.response.text}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"X user token ready at {settings.x_user_token_path}")
+
+
 @app.command("ingest-posts")
-def ingest_posts() -> None:
-    """Fetch X posts mentioning the watchlist. (Step 3)"""
-    typer.echo("Not implemented yet — see documentation/plan.md, Step 3.")
+def ingest_posts(
+    source: Annotated[
+        str,
+        typer.Option(
+            "--source",
+            help=(
+                "Post source: following for your reverse-chronological X following feed, "
+                "search for public cashtag search. home is accepted as an alias for following."
+            ),
+        ),
+    ] = "following",
+    max_posts: Annotated[
+        int,
+        typer.Option(
+            "--max-posts",
+            help="Maximum number of recent X posts to store.",
+        ),
+    ] = 100,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            help="X API results per request. X recent search accepts 10-100.",
+        ),
+    ] = 100,
+    tickers: Annotated[
+        str | None,
+        typer.Option(
+            "--tickers",
+            help="Comma-separated cashtags. Defaults to WATCHLIST from .env.",
+        ),
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            help="Raw X recent-search query. Only used with --source search.",
+        ),
+    ] = None,
+    include_replies: Annotated[
+        bool,
+        typer.Option(
+            "--include-replies",
+            help="Include replies from following-feed ingestion.",
+        ),
+    ] = False,
+    include_retweets: Annotated[
+        bool,
+        typer.Option(
+            "--include-retweets",
+            help="Include retweets/reposts from following-feed ingestion.",
+        ),
+    ] = False,
+) -> None:
+    """Fetch X posts into authors/posts."""
+    if max_posts < 1:
+        raise typer.BadParameter("--max-posts must be at least 1")
+    if page_size < 10 or page_size > 100:
+        raise typer.BadParameter("--page-size must be between 10 and 100")
+    if source not in {"following", "home", "search"}:
+        raise typer.BadParameter("--source must be following, home, or search")
+
+    ticker_list = (
+        [ticker.strip().upper() for ticker in tickers.split(",") if ticker.strip()]
+        if tickers
+        else settings.watchlist_tickers
+    )
+    if source == "search" and not query and not ticker_list:
+        raise typer.BadParameter(
+            "No tickers configured. Set WATCHLIST, pass --tickers, or pass --query."
+        )
+
+    try:
+        if source in {"following", "home"}:
+            result = ingest_home_timeline_posts(
+                max_posts=max_posts,
+                page_size=page_size,
+                exclude_replies=not include_replies,
+                exclude_retweets=not include_retweets,
+            )
+        else:
+            result = ingest_recent_posts(
+                tickers=ticker_list,
+                query=query,
+                max_posts=max_posts,
+                page_size=page_size,
+            )
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except httpx.HTTPStatusError as exc:
+        typer.secho(
+            f"X API request failed: {exc.response.status_code} {exc.response.text}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Query: {result.query}")
+    typer.echo(
+        f"Upserted {result.posts_seen} posts and saw {result.authors_seen} authors "
+        f"across {result.pages_fetched} page(s)."
+    )
 
 
 @app.command()

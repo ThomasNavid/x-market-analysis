@@ -110,7 +110,7 @@ x-market-analysis/
 
 ## Data model (PostgreSQL)
 
-- **posts** — `id` (X post id), `author_id`, `author_handle`, `text`, `created_at`,
+- **posts** — `id` (X post id), `author_id`, `text`, `created_at`,
   `like_count`, `repost_count`, `reply_count`, `lang`, `raw` (JSONB), `fetched_at`.
 - **authors** — `id`, `handle`, `followers`, `verified`, `account_tier` (for "account type" conditions).
 - **post_tickers** — `post_id` → `ticker`, `match_method` (cashtag / name / llm), `confidence`.
@@ -151,10 +151,16 @@ connections and `db/migrations.py` for a tiny migration runner that records appl
 > (`.schwab_token.json`) holds live credentials — it is git-ignored and must never be committed.
 
 ### Step 3 — X ingestion
-`x_client.py`: X API v2 recent/search, pagination, rate-limit + usage-cost awareness, retries.
-`ingest/posts.py`: query by cashtags/keywords → upsert `posts` + `authors`. Store full `raw` JSONB.
-CLI: `xmarket ingest-posts`.
-**Outcome:** posts + authors populated; idempotent re-runs.
+Primary mode: OAuth-login to X as the local user, read the authenticated user's reverse-chronological
+following feed, and store posts from followed accounts. This reflects the user's chronological Following
+feed rather than only broad public cashtag search or the algorithmic For You feed. Public recent search
+stays available as an optional research mode.
+
+`x_client.py`: X API v2 OAuth 2.0 Authorization Code + PKCE login, token refresh/cache,
+reverse-chronological following-feed calls, and optional recent-search calls. `ingest/posts.py`: fetch
+timeline/search pages, normalize author/post JSON, then upsert `posts` + `authors`. Store full `raw` JSONB.
+CLI: `xmarket x-login`, `xmarket ingest-posts --source following`, optional `--source search`.
+**Outcome:** posts + authors populated from the user's feed; idempotent re-runs.
 
 ### Step 4 — Ticker extraction
 `enrich/tickers.py`: cashtag regex (`$AAPL`), company-name dictionary lookup, optional LLM fallback for
@@ -215,7 +221,8 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. discla
 ## Verification (end-to-end)
 1. `docker compose up -d && uv run xmarket migrate` — tables exist (psql `\dt`).
 2. `xmarket ingest-prices` → `prices` populated for the watchlist.
-3. `xmarket ingest-posts` (small window) → `posts`/`authors` populated; re-run is idempotent.
+3. `xmarket x-login && xmarket ingest-posts --source following --max-posts 100` → `posts`/`authors`
+   populated from the following feed; re-run is idempotent.
 4. `xmarket enrich` → `post_tickers` + `sentiments` populated; second run scores ~0 new (cache works).
 5. `xmarket backtest --signal positive_high --horizon 5` → ranked forward-return stats; row in `backtest_runs`.
 6. `xmarket serve` → hit `/docs`; unauthenticated job call returns 401, authenticated returns 200.

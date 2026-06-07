@@ -3,6 +3,7 @@
 *.env
 !.env.example
 .schwab_token.json
+.x_user_token.json
 *_token.json
 
 # Python
