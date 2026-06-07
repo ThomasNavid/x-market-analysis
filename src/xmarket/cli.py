@@ -5,8 +5,11 @@ from typing import Annotated
 import httpx
 import typer
 from anthropic import APIError
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
-from xmarket.analysis.backtest import run_backtest
+from xmarket.analysis.backtest import BacktestResult, run_backtest
 from xmarket.config import settings
 from xmarket.db.migrations import apply_pending_migrations, pending_migrations
 from xmarket.enrich.sentiment import score_missing_sentiments
@@ -20,6 +23,7 @@ from xmarket.ingest.prices import ingest_prices as ingest_prices_job
 from xmarket.ingest.x_client import run_x_user_login
 
 app = typer.Typer(help="x-market-analysis command-line interface.")
+console = Console()
 
 
 def _parse_csv(value: str | None) -> list[str]:
@@ -32,17 +36,31 @@ def _parse_tickers(value: str | None) -> list[str]:
     return [item.upper() for item in _parse_csv(value)]
 
 
+def _print_kv_table(title: str, rows: list[tuple[str, object]]) -> None:
+    table = Table(title=title, show_header=False)
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value")
+    for label, value in rows:
+        table.add_row(label, str(value))
+    console.print(table)
+
+
 @app.command()
 def info() -> None:
     """Show the current configuration (sanity check that .env loads)."""
-    typer.echo(f"Watchlist : {', '.join(settings.watchlist_tickers)}")
-    typer.echo(f"DB        : {settings.database_url}")
-    typer.echo(f"Qualify   : {settings.qualify_model}")
-    typer.echo(f"Sentiment : {settings.sentiment_model}")
-    typer.echo(f"Schwab    : {'set' if settings.schwab_app_key else 'MISSING'}")
-    typer.echo(f"X token   : {'set' if settings.x_bearer_token else 'MISSING'}")
-    typer.echo(f"X client  : {'set' if settings.x_client_id else 'MISSING'}")
-    typer.echo(f"Anthropic : {'set' if settings.anthropic_api_key else 'MISSING'}")
+    _print_kv_table(
+        "x-market-analysis config",
+        [
+            ("Watchlist", ", ".join(settings.watchlist_tickers)),
+            ("Database", settings.database_url),
+            ("Qualify model", settings.qualify_model),
+            ("Sentiment model", settings.sentiment_model),
+            ("Schwab", "set" if settings.schwab_app_key else "MISSING"),
+            ("X token", "set" if settings.x_bearer_token else "MISSING"),
+            ("X client", "set" if settings.x_client_id else "MISSING"),
+            ("Anthropic", "set" if settings.anthropic_api_key else "MISSING"),
+        ],
+    )
 
 
 @app.command()
@@ -175,78 +193,122 @@ def pipeline(
         )
 
     try:
-        if skip_ingest:
-            typer.echo("Ingest: skipped")
-        elif source in {"following", "home"}:
-            ingest_result = ingest_home_timeline_posts(
-                max_posts=max_posts,
-                page_size=page_size,
-                exclude_replies=True,
-                exclude_retweets=True,
-            )
-            typer.echo(
-                f"Ingest: upserted {ingest_result.posts_seen} posts and saw "
-                f"{ingest_result.authors_seen} authors."
-            )
-        else:
-            ingest_result = ingest_recent_posts(
-                tickers=ticker_list,
-                query=query,
-                max_posts=max_posts,
-                page_size=page_size,
-            )
-            typer.echo(
-                f"Ingest: upserted {ingest_result.posts_seen} posts and saw "
-                f"{ingest_result.authors_seen} authors."
-            )
-
-        if skip_enrich:
-            typer.echo("Enrich: skipped")
-        else:
-            ticker_result = qualify_and_extract_tickers(limit=enrich_limit)
-            sentiment_result = score_missing_sentiments(limit=enrich_limit)
-
-            typer.echo(
-                "Enrich: qualified "
-                f"{ticker_result.qualified}/{ticker_result.qualified_checked} posts; "
-                f"upserted {ticker_result.ticker_rows_upserted} tickers; "
-                f"scored {sentiment_result.scored} sentiments."
-            )
-
+        active_steps = 0
+        if not skip_ingest:
+            active_steps += 1
+        if not skip_enrich:
+            active_steps += 1
             if ensure_prices:
-                price_result = ensure_price_bars_for_ticker_dates(
-                    ticker_result.ticker_dates,
-                    days=price_days,
-                )
-                typer.echo(
-                    f"Prices: checked {price_result.checked_tickers} tickers; "
-                    f"fetched {price_result.fetched_tickers}; "
-                    f"upserted {price_result.upserted_rows} rows."
-                )
-            else:
-                typer.echo("Prices: skipped")
+                active_steps += 1
+        if not skip_backtest:
+            active_steps += len(signal_names)
 
-        if skip_backtest:
-            typer.echo("Backtest: skipped")
-        else:
-            for signal_name in signal_names:
-                result = run_backtest(
-                    signal_name=signal_name,
-                    horizon=horizon,
-                    min_samples=min_samples,
+        if active_steps == 0:
+            console.print("[yellow]Pipeline: all stages skipped.[/yellow]")
+            return
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Starting pipeline", total=active_steps)
+
+            if skip_ingest:
+                console.print("[yellow]Ingest skipped[/yellow]")
+            elif source in {"following", "home"}:
+                progress.update(task, description="Ingesting following feed")
+                ingest_result = ingest_home_timeline_posts(
+                    max_posts=max_posts,
+                    page_size=page_size,
+                    exclude_replies=True,
+                    exclude_retweets=True,
                 )
-                metrics = result.metrics
-                typer.echo(
-                    f"Backtest {result.signal.name}: run_id={result.run_id}, "
-                    f"samples={metrics['sample_count']}, "
-                    f"avg_return={metrics['avg_directional_return']}, "
-                    f"win_rate={metrics['win_rate']}"
+                progress.console.print(
+                    "[green]Ingest complete[/green]: "
+                    f"{ingest_result.posts_seen} posts, "
+                    f"{ingest_result.authors_seen} authors"
                 )
-                if metrics["tiny_sample"]:
-                    typer.secho(
-                        f"Backtest {result.signal.name}: tiny sample (< {result.min_samples}).",
-                        fg=typer.colors.YELLOW,
+                progress.advance(task)
+            else:
+                progress.update(task, description="Ingesting search posts")
+                ingest_result = ingest_recent_posts(
+                    tickers=ticker_list,
+                    query=query,
+                    max_posts=max_posts,
+                    page_size=page_size,
+                )
+                progress.console.print(
+                    "[green]Ingest complete[/green]: "
+                    f"{ingest_result.posts_seen} posts, "
+                    f"{ingest_result.authors_seen} authors"
+                )
+                progress.advance(task)
+
+            if skip_enrich:
+                console.print("[yellow]Enrich skipped[/yellow]")
+            else:
+                progress.update(task, description="Qualifying posts and extracting tickers")
+                ticker_result = qualify_and_extract_tickers(limit=enrich_limit)
+                sentiment_result = score_missing_sentiments(limit=enrich_limit)
+                progress.console.print(
+                    "[green]Enrich complete[/green]: "
+                    f"qualified {ticker_result.qualified}/"
+                    f"{ticker_result.qualified_checked}, "
+                    f"tickers {ticker_result.ticker_rows_upserted}, "
+                    f"sentiments {sentiment_result.scored}"
+                )
+                progress.advance(task)
+
+                if ensure_prices:
+                    progress.update(task, description="Checking Schwab price coverage")
+                    price_result = ensure_price_bars_for_ticker_dates(
+                        ticker_result.ticker_dates,
+                        days=price_days,
                     )
+                    progress.console.print(
+                        "[green]Prices complete[/green]: "
+                        f"checked {price_result.checked_tickers}, "
+                        f"fetched {price_result.fetched_tickers}, "
+                        f"upserted {price_result.upserted_rows}"
+                    )
+                    progress.advance(task)
+                else:
+                    console.print("[yellow]Prices skipped[/yellow]")
+
+            if skip_backtest:
+                console.print("[yellow]Backtest skipped[/yellow]")
+            else:
+                for signal_name in signal_names:
+                    progress.update(task, description=f"Backtesting {signal_name}")
+                    result = run_backtest(
+                        signal_name=signal_name,
+                        horizon=horizon,
+                        min_samples=min_samples,
+                    )
+                    metrics = result.metrics
+                    progress.console.print(
+                        f"[green]Backtest {result.signal.name} complete[/green]: "
+                        f"run_id={result.run_id}, "
+                        f"samples={metrics['sample_count']}, "
+                        f"avg_return={metrics['avg_directional_return']}, "
+                        f"win_rate={metrics['win_rate']}"
+                    )
+                    if metrics["tiny_sample"]:
+                        progress.console.print(
+                            "[yellow]"
+                            f"Backtest {result.signal.name}: tiny sample "
+                            f"(< {result.min_samples})."
+                            "[/yellow]"
+                        )
+                    progress.advance(task)
+
+            progress.update(task, description="Pipeline complete")
+
+        console.print("[bold green]Pipeline complete[/bold green]")
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -495,15 +557,18 @@ def enrich(
         raise typer.BadParameter("--price-days must be at least 1")
 
     try:
-        ticker_result = qualify_and_extract_tickers(limit=limit)
-        sentiment_result = score_missing_sentiments(limit=limit)
+        with console.status("Qualifying posts and extracting tickers..."):
+            ticker_result = qualify_and_extract_tickers(limit=limit)
+        with console.status("Scoring sentiment..."):
+            sentiment_result = score_missing_sentiments(limit=limit)
 
         price_result = None
         if ensure_prices:
-            price_result = ensure_price_bars_for_ticker_dates(
-                ticker_result.ticker_dates,
-                days=price_days,
-            )
+            with console.status("Checking Schwab price coverage..."):
+                price_result = ensure_price_bars_for_ticker_dates(
+                    ticker_result.ticker_dates,
+                    days=price_days,
+                )
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -511,24 +576,48 @@ def enrich(
         typer.secho(f"Anthropic API request failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from exc
 
-    typer.echo(
-        "Qualified "
-        f"{ticker_result.qualified}/{ticker_result.qualified_checked} posts "
-        f"({ticker_result.rejected} rejected)."
-    )
-    typer.echo(
-        f"Ran ticker extraction for {ticker_result.extraction_checked} posts; "
-        f"upserted {ticker_result.ticker_rows_upserted} post_tickers rows."
-    )
-    typer.echo(
-        f"Scored sentiment for {sentiment_result.scored}/{sentiment_result.checked} "
-        "post/ticker pairs."
-    )
+    rows: list[tuple[str, object]] = [
+        ("Qualified", f"{ticker_result.qualified}/{ticker_result.qualified_checked}"),
+        ("Rejected", ticker_result.rejected),
+        ("Ticker extraction posts", ticker_result.extraction_checked),
+        ("Post ticker rows", ticker_result.ticker_rows_upserted),
+        ("Sentiments", f"{sentiment_result.scored}/{sentiment_result.checked}"),
+    ]
     if price_result is not None:
-        typer.echo(
-            f"Checked prices for {price_result.checked_tickers} tickers; "
-            f"fetched {price_result.fetched_tickers}, "
-            f"upserted {price_result.upserted_rows} rows."
+        rows.extend(
+            [
+                ("Price tickers checked", price_result.checked_tickers),
+                ("Price tickers fetched", price_result.fetched_tickers),
+                ("Price rows upserted", price_result.upserted_rows),
+            ]
+        )
+    else:
+        rows.append(("Prices", "skipped"))
+    _print_kv_table("Enrichment summary", rows)
+
+
+def _print_backtest_summary(result: BacktestResult) -> None:
+    metrics = result.metrics
+    _print_kv_table(
+        "Backtest summary",
+        [
+            ("Run ID", result.run_id),
+            ("Signal", result.signal.name),
+            ("Horizon", f"{result.horizon} trading days"),
+            ("Samples", f"{metrics['sample_count']} / {metrics['matched_candidates']} matched"),
+            ("Missing prices", metrics["missing_price_candidates"]),
+            ("Duplicates", metrics["duplicate_candidates"]),
+            ("Avg return", metrics["avg_directional_return"]),
+            ("Win rate", metrics["win_rate"]),
+            ("Volatility", metrics["volatility"]),
+            ("Sharpe-ish", metrics["simple_sharpe"]),
+        ],
+    )
+    if metrics["tiny_sample"]:
+        console.print(
+            "[yellow]"
+            f"Warning: tiny sample (< {result.min_samples}); do not trust this yet."
+            "[/yellow]"
         )
 
 
@@ -563,11 +652,12 @@ def backtest(
         raise typer.BadParameter("--min-samples must be at least 1")
 
     try:
-        result = run_backtest(
-            signal_name=signal,
-            horizon=horizon,
-            min_samples=min_samples,
-        )
+        with console.status(f"Backtesting {signal}..."):
+            result = run_backtest(
+                signal_name=signal,
+                horizon=horizon,
+                min_samples=min_samples,
+            )
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -575,22 +665,7 @@ def backtest(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
 
-    metrics = result.metrics
-    typer.echo(f"Run ID      : {result.run_id}")
-    typer.echo(f"Signal      : {result.signal.name}")
-    typer.echo(f"Horizon     : {result.horizon} trading days")
-    typer.echo(f"Samples     : {metrics['sample_count']} / {metrics['matched_candidates']} matched")
-    typer.echo(f"Missing px  : {metrics['missing_price_candidates']}")
-    typer.echo(f"Duplicates  : {metrics['duplicate_candidates']}")
-    typer.echo(f"Avg return  : {metrics['avg_directional_return']}")
-    typer.echo(f"Win rate    : {metrics['win_rate']}")
-    typer.echo(f"Volatility  : {metrics['volatility']}")
-    typer.echo(f"Sharpe-ish  : {metrics['simple_sharpe']}")
-    if metrics["tiny_sample"]:
-        typer.secho(
-            f"Warning: tiny sample (< {result.min_samples}); do not trust this yet.",
-            fg=typer.colors.YELLOW,
-        )
+    _print_backtest_summary(result)
 
 
 @app.command()

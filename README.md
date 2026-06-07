@@ -125,6 +125,7 @@ tests/            unit + API tests
 - [ ] Step 5 — LLM sentiment (Claude Haiku)
 - [x] Step 6 — Signal & backtest engine
 - [x] Step 6.5 — Pipeline orchestration CLI
+- [x] Step 6.6 — Rich CLI progress and summaries
 - [ ] Step 7 — Secured FastAPI
 - [ ] Step 8 — Scheduling
 - [ ] Step 9 — Tests, CI, docs polish

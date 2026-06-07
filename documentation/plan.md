@@ -218,6 +218,12 @@ price coverage toggle, signal list, horizon, min samples, and skip flags for ing
 **Outcome:** one command exercises the full system so far, and the same orchestration can later back the
 Step 7 job API and Step 8 scheduler.
 
+### Step 6.6 — Rich CLI progress and summaries
+Use Rich for CLI readability: config/enrich/backtest summary tables, status spinners around long-running
+single commands, and a progress bar for `xmarket pipeline` stages. Keep command arguments and underlying
+behavior unchanged.
+**Outcome:** pipeline runs are easier to monitor without changing data semantics.
+
 ### Step 7 — FastAPI (secured) + portfolio surface
 `api/main.py` with routers: `/posts`, `/signals`, `/backtests` (read results),
 `/jobs` (trigger ingest/enrich/backtest).

@@ -18,6 +18,7 @@ dependencies = [
     "apscheduler>=3.10",           # scheduled jobs
     "typer>=0.12",                 # CLI framework (`xmarket ...`)
     "tenacity>=8.4",               # retries for flaky network calls
+    "rich>=15.0.0",
 ]
 
 [project.scripts]
