@@ -122,7 +122,7 @@ tests/            unit + API tests
 - [ ] Step 3 — X ingestion
 - [ ] Step 4 — Qualification + ticker extraction
 - [ ] Step 5 — LLM sentiment (Claude Haiku)
-- [ ] Step 6 — Signal & backtest engine
+- [x] Step 6 — Signal & backtest engine
 - [ ] Step 7 — Secured FastAPI
 - [ ] Step 8 — Scheduling
 - [ ] Step 9 — Tests, CI, docs polish

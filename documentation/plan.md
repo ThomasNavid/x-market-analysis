@@ -200,14 +200,15 @@ required ticker/date range and only request missing days. Since Schwab prices ar
 same-day ticker fetch should satisfy later posts for that ticker without another market-data request.
 
 ### Step 6 — Signal & backtest engine (the heart of it)
-`analysis/signals.py`: declarative conditions _C_ — e.g. `sentiment_score >= 0.6`,
-`mention_count_24h >= K`, `author_followers >= F`, `verified == true`.
-`analysis/backtest.py`: for each post/day matching a signal, compute forward return over horizon `N`
-(using `prices`), then aggregate: **avg return, win rate, sample size, volatility, simple Sharpe**.
-Guardrails against look-ahead bias and tiny samples (flag `n < threshold`).
-`analysis/strategies.py`: sweep parameters, rank signals, persist to `backtest_runs`.
-CLI: `xmarket backtest --signal ... --horizon N`.
-**Outcome:** a ranked table of which mention-conditions historically preceded outperformance.
+`analysis/signals.py`: v1 built-in signals `positive_high` (`sentiment_score >= 0.6`) and
+`negative_high` (`sentiment_score <= -0.6`), both requiring ticker confidence `>= 0.6`.
+`analysis/backtest.py`: for each matching enriched post/ticker, enter at the next available trading-day
+close after the post date, exit after horizon `N` trading days, dedupe to the earliest post per
+ticker/entry date, then aggregate raw and directional returns. Guardrails against look-ahead bias and
+tiny samples (flag `n < threshold`). Every run upserts the signal definition and persists results to
+`backtest_runs`.
+CLI: `xmarket backtest --signal positive_high --horizon N`.
+**Outcome:** saved, comparable backtest runs for the first bullish and bearish sentiment signals.
 
 ### Step 7 — FastAPI (secured) + portfolio surface
 `api/main.py` with routers: `/posts`, `/signals`, `/backtests` (read results),

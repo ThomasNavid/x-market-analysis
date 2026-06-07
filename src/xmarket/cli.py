@@ -6,6 +6,7 @@ import httpx
 import typer
 from anthropic import APIError
 
+from xmarket.analysis.backtest import run_backtest
 from xmarket.config import settings
 from xmarket.db.migrations import apply_pending_migrations, pending_migrations
 from xmarket.enrich.sentiment import score_missing_sentiments
@@ -303,9 +304,64 @@ def enrich(
 
 
 @app.command()
-def backtest() -> None:
+def backtest(
+    signal: Annotated[
+        str,
+        typer.Option(
+            "--signal",
+            help="Built-in signal name, e.g. positive_high or negative_high.",
+        ),
+    ],
+    horizon: Annotated[
+        int,
+        typer.Option(
+            "--horizon",
+            help="Trading-day horizon after entry close.",
+        ),
+    ] = 5,
+    min_samples: Annotated[
+        int,
+        typer.Option(
+            "--min-samples",
+            help="Sample count below which the run is flagged as tiny.",
+        ),
+    ] = 30,
+) -> None:
     """Run a signal backtest over price history. (Step 6)"""
-    typer.echo("Not implemented yet — see documentation/plan.md, Step 6.")
+    if horizon < 1:
+        raise typer.BadParameter("--horizon must be at least 1")
+    if min_samples < 1:
+        raise typer.BadParameter("--min-samples must be at least 1")
+
+    try:
+        result = run_backtest(
+            signal_name=signal,
+            horizon=horizon,
+            min_samples=min_samples,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    metrics = result.metrics
+    typer.echo(f"Run ID      : {result.run_id}")
+    typer.echo(f"Signal      : {result.signal.name}")
+    typer.echo(f"Horizon     : {result.horizon} trading days")
+    typer.echo(f"Samples     : {metrics['sample_count']} / {metrics['matched_candidates']} matched")
+    typer.echo(f"Missing px  : {metrics['missing_price_candidates']}")
+    typer.echo(f"Duplicates  : {metrics['duplicate_candidates']}")
+    typer.echo(f"Avg return  : {metrics['avg_directional_return']}")
+    typer.echo(f"Win rate    : {metrics['win_rate']}")
+    typer.echo(f"Volatility  : {metrics['volatility']}")
+    typer.echo(f"Sharpe-ish  : {metrics['simple_sharpe']}")
+    if metrics["tiny_sample"]:
+        typer.secho(
+            f"Warning: tiny sample (< {result.min_samples}); do not trust this yet.",
+            fg=typer.colors.YELLOW,
+        )
 
 
 @app.command()
