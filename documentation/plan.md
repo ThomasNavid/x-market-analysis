@@ -210,6 +210,14 @@ tiny samples (flag `n < threshold`). Every run upserts the signal definition and
 CLI: `xmarket backtest --signal positive_high --horizon N`.
 **Outcome:** saved, comparable backtest runs for the first bullish and bearish sentiment signals.
 
+### Step 6.5 — Pipeline orchestration CLI
+`xmarket pipeline`: run the current end-to-end flow in order: ingest posts, enrich/score/cache, ensure
+missing Schwab price coverage, then backtest `positive_high` and `negative_high`. Keep individual commands
+available for debugging and focused reruns. Options include source/max posts/page size, enrich limit,
+price coverage toggle, signal list, horizon, min samples, and skip flags for ingest/enrich/backtest.
+**Outcome:** one command exercises the full system so far, and the same orchestration can later back the
+Step 7 job API and Step 8 scheduler.
+
 ### Step 7 — FastAPI (secured) + portfolio surface
 `api/main.py` with routers: `/posts`, `/signals`, `/backtests` (read results),
 `/jobs` (trigger ingest/enrich/backtest).

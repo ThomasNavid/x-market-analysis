@@ -69,8 +69,9 @@ uv run xmarket x-login                  # one-time X OAuth login for your follow
 uv run xmarket ingest-posts --source following --max-posts 100
 uv run xmarket enrich             # qualify + ticker extraction + Haiku sentiment (cached)
 
-# 6. Backtest a signal
+# 6. Backtest a signal, or run the whole current pipeline
 uv run xmarket backtest --signal positive_high --horizon 5
+uv run xmarket pipeline
 
 # 7. Serve the API
 uv run xmarket serve              # docs at http://localhost:8000/docs
@@ -123,6 +124,7 @@ tests/            unit + API tests
 - [ ] Step 4 — Qualification + ticker extraction
 - [ ] Step 5 — LLM sentiment (Claude Haiku)
 - [x] Step 6 — Signal & backtest engine
+- [x] Step 6.5 — Pipeline orchestration CLI
 - [ ] Step 7 — Secured FastAPI
 - [ ] Step 8 — Scheduling
 - [ ] Step 9 — Tests, CI, docs polish

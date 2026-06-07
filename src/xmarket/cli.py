@@ -22,6 +22,16 @@ from xmarket.ingest.x_client import run_x_user_login
 app = typer.Typer(help="x-market-analysis command-line interface.")
 
 
+def _parse_csv(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_tickers(value: str | None) -> list[str]:
+    return [item.upper() for item in _parse_csv(value)]
+
+
 @app.command()
 def info() -> None:
     """Show the current configuration (sanity check that .env loads)."""
@@ -33,6 +43,225 @@ def info() -> None:
     typer.echo(f"X token   : {'set' if settings.x_bearer_token else 'MISSING'}")
     typer.echo(f"X client  : {'set' if settings.x_client_id else 'MISSING'}")
     typer.echo(f"Anthropic : {'set' if settings.anthropic_api_key else 'MISSING'}")
+
+
+@app.command()
+def pipeline(
+    source: Annotated[
+        str,
+        typer.Option(
+            "--source",
+            help="Post source for ingestion: following, home, or search.",
+        ),
+    ] = "following",
+    max_posts: Annotated[
+        int,
+        typer.Option(
+            "--max-posts",
+            help="Maximum recent X posts to ingest before enrichment.",
+        ),
+    ] = 100,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            help="X API results per request.",
+        ),
+    ] = 100,
+    tickers: Annotated[
+        str | None,
+        typer.Option(
+            "--tickers",
+            help="Comma-separated cashtags for search mode. Defaults to WATCHLIST.",
+        ),
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            help="Raw X recent-search query. Only used with --source search.",
+        ),
+    ] = None,
+    enrich_limit: Annotated[
+        int,
+        typer.Option(
+            "--enrich-limit",
+            help="Maximum posts/pairs to process per enrichment stage.",
+        ),
+    ] = 50,
+    ensure_prices: Annotated[
+        bool,
+        typer.Option(
+            "--ensure-prices/--no-ensure-prices",
+            help="Fetch missing Schwab daily bars for extracted tickers during enrichment.",
+        ),
+    ] = True,
+    price_days: Annotated[
+        int,
+        typer.Option(
+            "--price-days",
+            help="Calendar days after each post timestamp to ensure price coverage for.",
+        ),
+    ] = settings.enrichment_price_days,
+    signals: Annotated[
+        str,
+        typer.Option(
+            "--signals",
+            help="Comma-separated built-in signals to backtest.",
+        ),
+    ] = "positive_high,negative_high",
+    horizon: Annotated[
+        int,
+        typer.Option(
+            "--horizon",
+            help="Trading-day horizon after entry close.",
+        ),
+    ] = 5,
+    min_samples: Annotated[
+        int,
+        typer.Option(
+            "--min-samples",
+            help="Sample count below which backtests are flagged as tiny.",
+        ),
+    ] = 30,
+    skip_ingest: Annotated[
+        bool,
+        typer.Option(
+            "--skip-ingest",
+            help="Skip X post ingestion and use already-stored posts.",
+        ),
+    ] = False,
+    skip_enrich: Annotated[
+        bool,
+        typer.Option(
+            "--skip-enrich",
+            help="Skip qualification/ticker extraction/sentiment.",
+        ),
+    ] = False,
+    skip_backtest: Annotated[
+        bool,
+        typer.Option(
+            "--skip-backtest",
+            help="Skip built-in signal backtests.",
+        ),
+    ] = False,
+) -> None:
+    """Run the current ingest → enrich → backtest pipeline. (Step 6.5)"""
+    if max_posts < 1:
+        raise typer.BadParameter("--max-posts must be at least 1")
+    if page_size < 10 or page_size > 100:
+        raise typer.BadParameter("--page-size must be between 10 and 100")
+    if source not in {"following", "home", "search"}:
+        raise typer.BadParameter("--source must be following, home, or search")
+    if enrich_limit < 1:
+        raise typer.BadParameter("--enrich-limit must be at least 1")
+    if price_days < 1:
+        raise typer.BadParameter("--price-days must be at least 1")
+    if horizon < 1:
+        raise typer.BadParameter("--horizon must be at least 1")
+    if min_samples < 1:
+        raise typer.BadParameter("--min-samples must be at least 1")
+
+    signal_names = _parse_csv(signals)
+    if not signal_names and not skip_backtest:
+        raise typer.BadParameter(
+            "--signals must include at least one signal unless --skip-backtest"
+        )
+
+    ticker_list = _parse_tickers(tickers) if tickers else settings.watchlist_tickers
+    if source == "search" and not query and not ticker_list and not skip_ingest:
+        raise typer.BadParameter(
+            "No tickers configured. Set WATCHLIST, pass --tickers, or pass --query."
+        )
+
+    try:
+        if skip_ingest:
+            typer.echo("Ingest: skipped")
+        elif source in {"following", "home"}:
+            ingest_result = ingest_home_timeline_posts(
+                max_posts=max_posts,
+                page_size=page_size,
+                exclude_replies=True,
+                exclude_retweets=True,
+            )
+            typer.echo(
+                f"Ingest: upserted {ingest_result.posts_seen} posts and saw "
+                f"{ingest_result.authors_seen} authors."
+            )
+        else:
+            ingest_result = ingest_recent_posts(
+                tickers=ticker_list,
+                query=query,
+                max_posts=max_posts,
+                page_size=page_size,
+            )
+            typer.echo(
+                f"Ingest: upserted {ingest_result.posts_seen} posts and saw "
+                f"{ingest_result.authors_seen} authors."
+            )
+
+        if skip_enrich:
+            typer.echo("Enrich: skipped")
+        else:
+            ticker_result = qualify_and_extract_tickers(limit=enrich_limit)
+            sentiment_result = score_missing_sentiments(limit=enrich_limit)
+
+            typer.echo(
+                "Enrich: qualified "
+                f"{ticker_result.qualified}/{ticker_result.qualified_checked} posts; "
+                f"upserted {ticker_result.ticker_rows_upserted} tickers; "
+                f"scored {sentiment_result.scored} sentiments."
+            )
+
+            if ensure_prices:
+                price_result = ensure_price_bars_for_ticker_dates(
+                    ticker_result.ticker_dates,
+                    days=price_days,
+                )
+                typer.echo(
+                    f"Prices: checked {price_result.checked_tickers} tickers; "
+                    f"fetched {price_result.fetched_tickers}; "
+                    f"upserted {price_result.upserted_rows} rows."
+                )
+            else:
+                typer.echo("Prices: skipped")
+
+        if skip_backtest:
+            typer.echo("Backtest: skipped")
+        else:
+            for signal_name in signal_names:
+                result = run_backtest(
+                    signal_name=signal_name,
+                    horizon=horizon,
+                    min_samples=min_samples,
+                )
+                metrics = result.metrics
+                typer.echo(
+                    f"Backtest {result.signal.name}: run_id={result.run_id}, "
+                    f"samples={metrics['sample_count']}, "
+                    f"avg_return={metrics['avg_directional_return']}, "
+                    f"win_rate={metrics['win_rate']}"
+                )
+                if metrics["tiny_sample"]:
+                    typer.secho(
+                        f"Backtest {result.signal.name}: tiny sample (< {result.min_samples}).",
+                        fg=typer.colors.YELLOW,
+                    )
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except httpx.HTTPStatusError as exc:
+        typer.secho(
+            f"X API request failed: {exc.response.status_code} {exc.response.text}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from exc
+    except APIError as exc:
+        typer.secho(f"Anthropic API request failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
 
 
 @app.command()
