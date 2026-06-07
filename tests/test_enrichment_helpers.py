@@ -3,6 +3,7 @@
 import pytest
 
 from xmarket.enrich.anthropic_json import LLMResponseError, extract_json_object
+from xmarket.enrich.reports import parse_since_date
 from xmarket.enrich.sentiment import _label, _score
 from xmarket.enrich.tickers import _clean_ticker, _confidence
 
@@ -41,3 +42,18 @@ def test_sentiment_score_and_label_fallbacks() -> None:
     assert _label("bullish", 0.4) == "positive"
     assert _label("bearish", -0.4) == "negative"
     assert _label("", 0.0) == "neutral"
+
+
+def test_parse_since_date_accepts_date_or_datetime() -> None:
+    date_value = parse_since_date("2026-06-08")
+    datetime_value = parse_since_date("2026-06-08T12:30:00")
+
+    assert date_value is not None
+    assert date_value.isoformat() == "2026-06-08T00:00:00"
+    assert datetime_value is not None
+    assert datetime_value.isoformat() == "2026-06-08T12:30:00"
+
+
+def test_parse_since_date_rejects_invalid_value() -> None:
+    with pytest.raises(ValueError, match="--since"):
+        parse_since_date("not-a-date")

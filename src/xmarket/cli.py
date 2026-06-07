@@ -12,6 +12,7 @@ from rich.table import Table
 from xmarket.analysis.backtest import BacktestResult, run_backtest
 from xmarket.config import settings
 from xmarket.db.migrations import apply_pending_migrations, pending_migrations
+from xmarket.enrich.reports import fetch_qualified_report_rows, parse_since_date
 from xmarket.enrich.sentiment import score_missing_sentiments
 from xmarket.enrich.tickers import qualify_and_extract_tickers
 from xmarket.ingest.posts import ingest_home_timeline_posts, ingest_recent_posts
@@ -45,6 +46,21 @@ def _print_kv_table(title: str, rows: list[tuple[str, object]]) -> None:
     console.print(table)
 
 
+def _format_optional(value: object | None) -> str:
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _clip(value: str | None, *, max_chars: int) -> str:
+    if value is None:
+        return "-"
+    compact = " ".join(value.split())
+    if len(compact) <= max_chars:
+        return compact
+    return f"{compact[: max_chars - 3]}..."
+
+
 @app.command()
 def info() -> None:
     """Show the current configuration (sanity check that .env loads)."""
@@ -61,6 +77,96 @@ def info() -> None:
             ("Anthropic", "set" if settings.anthropic_api_key else "MISSING"),
         ],
     )
+
+
+@app.command("report-qualified")
+def report_qualified(
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            help="Maximum report rows to show.",
+        ),
+    ] = 25,
+    ticker: Annotated[
+        str | None,
+        typer.Option(
+            "--ticker",
+            help="Only show rows for this ticker.",
+        ),
+    ] = None,
+    min_score: Annotated[
+        float | None,
+        typer.Option(
+            "--min-score",
+            help="Minimum absolute sentiment score, e.g. 0.6 shows strong positive/negative rows.",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="Only show posts at or after this ISO date/datetime, e.g. 2026-06-08.",
+        ),
+    ] = None,
+    text_chars: Annotated[
+        int,
+        typer.Option(
+            "--text-chars",
+            help="Maximum characters of post text to show.",
+        ),
+    ] = 140,
+) -> None:
+    """Show qualified posts, extracted tickers, and sentiment. (Step 6.7)"""
+    if limit < 1:
+        raise typer.BadParameter("--limit must be at least 1")
+    if min_score is not None and min_score < 0:
+        raise typer.BadParameter("--min-score must be non-negative")
+    if text_chars < 20:
+        raise typer.BadParameter("--text-chars must be at least 20")
+
+    try:
+        since_dt = parse_since_date(since)
+        rows = fetch_qualified_report_rows(
+            limit=limit,
+            ticker=ticker.upper() if ticker else None,
+            min_abs_score=min_score,
+            since=since_dt,
+            text_chars=text_chars,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    if not rows:
+        console.print("[yellow]No qualified report rows found.[/yellow]")
+        return
+
+    table = Table(title="Qualified posts and sentiment", expand=True)
+    table.add_column("Created", no_wrap=True)
+    table.add_column("Ticker", style="cyan", no_wrap=True)
+    table.add_column("Conf", justify="right", no_wrap=True)
+    table.add_column("Sentiment")
+    table.add_column("Qualification")
+    table.add_column("Text")
+
+    for row in rows:
+        sentiment = (
+            f"{row.sentiment_label} {row.sentiment_score:.2f}\n"
+            f"{_clip(row.sentiment_rationale, max_chars=90)}"
+            if row.sentiment_label is not None and row.sentiment_score is not None
+            else "-"
+        )
+        table.add_row(
+            row.created_at.strftime("%Y-%m-%d %H:%M"),
+            _format_optional(row.ticker),
+            f"{row.ticker_confidence:.2f}" if row.ticker_confidence is not None else "-",
+            sentiment,
+            _clip(row.qualification_reason, max_chars=90),
+            row.text,
+        )
+
+    console.print(table)
 
 
 @app.command()

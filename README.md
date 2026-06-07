@@ -72,6 +72,7 @@ uv run xmarket enrich             # qualify + ticker extraction + Haiku sentimen
 # 6. Backtest a signal, or run the whole current pipeline
 uv run xmarket backtest --signal positive_high --horizon 5
 uv run xmarket pipeline
+uv run xmarket report-qualified --limit 25
 
 # 7. Serve the API
 uv run xmarket serve              # docs at http://localhost:8000/docs
@@ -126,6 +127,7 @@ tests/            unit + API tests
 - [x] Step 6 — Signal & backtest engine
 - [x] Step 6.5 — Pipeline orchestration CLI
 - [x] Step 6.6 — Rich CLI progress and summaries
+- [x] Step 6.7 — Qualified post report CLI
 - [ ] Step 7 — Secured FastAPI
 - [ ] Step 8 — Scheduling
 - [ ] Step 9 — Tests, CI, docs polish

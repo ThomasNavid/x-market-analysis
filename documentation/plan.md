@@ -224,6 +224,12 @@ single commands, and a progress bar for `xmarket pipeline` stages. Keep command 
 behavior unchanged.
 **Outcome:** pipeline runs are easier to monitor without changing data semantics.
 
+### Step 6.7 — Qualified post report CLI
+`xmarket report-qualified`: read-only Rich table for inspecting qualified posts, extracted tickers,
+sentiment labels/scores/rationales, qualification reasons, and post text previews. Options include
+`--limit`, `--ticker`, `--min-score` (absolute sentiment score), `--since`, and `--text-chars`.
+**Outcome:** fast manual QA of qualification and sentiment quality before trusting backtests.
+
 ### Step 7 — FastAPI (secured) + portfolio surface
 `api/main.py` with routers: `/posts`, `/signals`, `/backtests` (read results),
 `/jobs` (trigger ingest/enrich/backtest).

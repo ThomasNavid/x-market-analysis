@@ -40,6 +40,7 @@ Your project's own commands. `xmarket` exists because of the `[project.scripts]`
 | `uv run xmarket ingest-posts --source following --max-posts 100` | Fetch your reverse-chronological X following feed into `posts`/`authors`. | ✅ |
 | `uv run xmarket ingest-posts --source search --max-posts 100` | Optional public cashtag search mode. | ✅ |
 | `uv run xmarket enrich` | Qualify posts, extract tickers, score sentiment, and fetch missing Schwab price bars. | ✅ |
+| `uv run xmarket report-qualified --limit 25` | Inspect qualified posts, extracted tickers, and sentiment/rationale. | ✅ |
 | `uv run xmarket backtest --signal positive_high --horizon 5` | Backtest a built-in signal over price history and save the run. | ✅ |
 | `uv run xmarket pipeline` | Run ingest, enrich, price coverage, and both built-in backtests with Rich progress output. | ✅ |
 | `uv run xmarket serve` | Run the FastAPI server (docs at http://localhost:8000/docs). | 🚧 Step 7 |
