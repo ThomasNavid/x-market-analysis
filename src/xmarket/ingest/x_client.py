@@ -129,8 +129,7 @@ def _listen_for_oauth_callback(timeout_seconds: int) -> str:
     parsed = urlparse(settings.x_redirect_uri)
     if parsed.hostname is None or parsed.port is None:
         raise RuntimeError(
-            "X_REDIRECT_URI must include a host and port, "
-            "e.g. http://127.0.0.1:8001/x/callback"
+            "X_REDIRECT_URI must include a host and port, e.g. http://127.0.0.1:8001/x/callback"
         )
 
     server = _OAuthCallbackServer((parsed.hostname, parsed.port), _OAuthCallbackHandler)

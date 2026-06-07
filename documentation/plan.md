@@ -8,8 +8,9 @@ stocks with subsequent price performance. The core research question is:
 > "When a stock is mentioned on X under conditions _C_ (e.g. high positive sentiment, mention-volume
 > spike, specific account types), does it outperform over the next _N_ days?"
 
-The pipeline: ingest X posts → extract tickers → score sentiment with an LLM (Claude Haiku, cheap) →
-join against price data → backtest signal definitions → rank strategies by forward returns.
+The pipeline: ingest X posts → qualify posts as stock-trade intelligence → extract tickers →
+score sentiment with an LLM (Claude Haiku, cheap) → join against price data → backtest signal
+definitions → rank strategies by forward returns.
 
 This is **both a public GitHub portfolio project and a personal trading tool**, so it needs clean code,
 a secured FastAPI, tests, and good docs. X API access is sorted (usage-based billing). The DB is
@@ -23,8 +24,9 @@ Supabase/Neon/RDS unchanged).
 ```
                  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
    X API  ─────► │  ingest_x    │ ──► │  enrich      │ ──► │  PostgreSQL  │
- (usage-based)   │  (posts)     │     │  tickers +   │     │ (raw SQL)    │
-                 └──────────────┘     │  sentiment   │     └──────┬───────┘
+ (usage-based)   │  (posts)     │     │  qualify +   │     │ (raw SQL)    │
+                 └──────────────┘     │  tickers +   │     └──────┬───────┘
+                                      │  sentiment   │            │
                                       │  (Haiku LLM) │            │
  Schwab API  ─► ingest_prices ─────────┴──────────────┘            │
  (price/OHLCV)                                                    ▼
@@ -90,7 +92,7 @@ x-market-analysis/
 │   │   ├── posts.py               # fetch + persist posts
 │   │   └── prices.py              # PriceProvider interface + Schwab impl
 │   ├── enrich/
-│   │   ├── tickers.py             # cashtag + company-name → ticker resolution
+│   │   ├── tickers.py             # LLM qualification + ticker resolution
 │   │   └── sentiment.py           # Claude Haiku sentiment (batched, cached)
 │   ├── analysis/
 │   │   ├── signals.py             # signal definitions (declarative conditions C)
@@ -113,7 +115,12 @@ x-market-analysis/
 - **posts** — `id` (X post id), `author_id`, `text`, `created_at`,
   `like_count`, `repost_count`, `reply_count`, `lang`, `raw` (JSONB), `fetched_at`.
 - **authors** — `id`, `handle`, `followers`, `verified`, `account_tier` (for "account type" conditions).
-- **post_tickers** — `post_id` → `ticker`, `match_method` (cashtag / name / llm), `confidence`.
+- **post_qualifications** — cached qualification decisions per `post_id` + `prompt_version`, including
+  `qualified`, `reason`, and `model`; rejected posts are cached here so they are not re-scored.
+- **post_ticker_extractions** — cached raw ticker-extraction output per `post_id` + `prompt_version`,
+  including qualified posts where no ticker could be resolved.
+- **post_tickers** — normalized `post_id` → `ticker`, `match_method` (llm / cashtag / name),
+  `confidence`, qualification/extraction prompt metadata.
 - **sentiments** — `post_id`, `ticker`, `label` (pos/neg/neutral), `score` (-1..1),
   `model`, `prompt_version`, `created_at`. Cached so we never re-pay for the same post.
 - **prices** — `ticker`, `date`, `open/high/low/close/adj_close`, `volume`. Daily OHLCV.
@@ -162,16 +169,35 @@ timeline/search pages, normalize author/post JSON, then upsert `posts` + `author
 CLI: `xmarket x-login`, `xmarket ingest-posts --source following`, optional `--source search`.
 **Outcome:** posts + authors populated from the user's feed; idempotent re-runs.
 
-### Step 4 — Ticker extraction
-`enrich/tickers.py`: cashtag regex (`$AAPL`), company-name dictionary lookup, optional LLM fallback for
-ambiguous mentions. Writes `post_tickers`.
-**Outcome:** posts linked to tickers with method + confidence.
+### Step 4 — Qualify trade-intel posts, then extract tickers
+`enrich/tickers.py` runs a two-pass LLM workflow before sentiment:
+
+1. **Qualification pass** with `QUALIFY_MODEL=claude-haiku-4-5`: decide whether the post is discussing a
+   public company, ticker, market-moving event, trading setup, or other stock-specific information that
+   could plausibly be useful as trading intelligence. Examples include positive/negative product news,
+   executive or regulatory updates, earnings commentary, supply-chain signals, unusual demand, or explicit
+   trade commentary about a particular stock. Generic market chatter, politics without a clear stock link,
+   jokes, and posts with no investable public-company target are rejected.
+2. **Ticker extraction pass** only for qualified posts: resolve the investable ticker(s) mentioned or
+   strongly implied by the post, returning canonical symbols such as `AAPL` when the text says "Apple".
+   Cashtags and company-name matches can be used as hints, but the LLM is responsible for disambiguation
+   and structured output.
+
+Writes `post_tickers` with ticker, confidence, qualification decision/reason, model, and prompt version.
+Skip posts already qualified/extracted for the same prompt version unless forced.
+**Outcome:** only trade-relevant posts are linked to canonical tickers with method + confidence.
 
 ### Step 5 — LLM sentiment (Claude Haiku)
-`enrich/sentiment.py`: batched prompts, **structured JSON output** (label + score + rationale),
-`prompt_version` tracked, results cached in `sentiments` (skip already-scored post+ticker pairs),
-prompt caching on the system prompt to cut cost. CLI: `xmarket enrich`.
-**Outcome:** every (post, ticker) has a cached sentiment; re-runs are nearly free.
+`enrich/sentiment.py`: for qualified `(post, ticker)` pairs, run `SENTIMENT_MODEL=claude-haiku-4-5`
+with batched prompts and **structured JSON output** (label + score + rationale). Track
+`prompt_version`, cache results in `sentiments`, and skip already-scored post+ticker/model/prompt-version
+pairs. Prompt caching on the system prompt cuts cost. CLI: `xmarket enrich`.
+**Outcome:** every qualified (post, ticker) has cached sentiment; re-runs are nearly free.
+
+After ticker extraction/sentiment, ensure Schwab daily OHLCV exists for the extracted ticker around the
+post timestamp. Use an idempotent price-ingestion path: before calling Schwab, check `prices` for the
+required ticker/date range and only request missing days. Since Schwab prices are daily candles, a
+same-day ticker fetch should satisfy later posts for that ticker without another market-data request.
 
 ### Step 6 — Signal & backtest engine (the heart of it)
 `analysis/signals.py`: declarative conditions _C_ — e.g. `sentiment_score >= 0.6`,
@@ -210,11 +236,12 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. discla
 - README disclaimer: educational/research, not financial advice; respect X API ToS.
 
 ## Cost control (X + LLM are usage-billed)
-- Sentiment results cached in DB → never re-score the same post.
+- Qualification, ticker extraction, and sentiment results cached in DB → never re-pay for the same post
+  and prompt version.
 - Haiku + prompt caching + batching to minimize tokens.
 - X queries scoped to a configurable watchlist + time window; usage logged.
-- Schwab market data is included with a brokerage account; cache OHLCV in the `prices` table to avoid
-  refetching the same history.
+- Schwab market data is included with a brokerage account; cache OHLCV in the `prices` table and check
+  ticker/date coverage before calling Schwab so repeated same-day mentions do not refetch the same data.
 
 ---
 
@@ -223,7 +250,8 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. discla
 2. `xmarket ingest-prices` → `prices` populated for the watchlist.
 3. `xmarket x-login && xmarket ingest-posts --source following --max-posts 100` → `posts`/`authors`
    populated from the following feed; re-run is idempotent.
-4. `xmarket enrich` → `post_tickers` + `sentiments` populated; second run scores ~0 new (cache works).
+4. `xmarket enrich` → qualified posts produce `post_tickers` + `sentiments`; second run scores ~0 new
+   and performs ~0 duplicate Schwab fetches for already-covered ticker/date ranges.
 5. `xmarket backtest --signal positive_high --horizon 5` → ranked forward-return stats; row in `backtest_runs`.
 6. `xmarket serve` → hit `/docs`; unauthenticated job call returns 401, authenticated returns 200.
 7. `pytest` green; GitHub Actions green on a PR.

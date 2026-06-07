@@ -4,11 +4,17 @@ from typing import Annotated
 
 import httpx
 import typer
+from anthropic import APIError
 
 from xmarket.config import settings
 from xmarket.db.migrations import apply_pending_migrations, pending_migrations
+from xmarket.enrich.sentiment import score_missing_sentiments
+from xmarket.enrich.tickers import qualify_and_extract_tickers
 from xmarket.ingest.posts import ingest_home_timeline_posts, ingest_recent_posts
-from xmarket.ingest.prices import create_schwab_client_from_login
+from xmarket.ingest.prices import (
+    create_schwab_client_from_login,
+    ensure_price_bars_for_ticker_dates,
+)
 from xmarket.ingest.prices import ingest_prices as ingest_prices_job
 from xmarket.ingest.x_client import run_x_user_login
 
@@ -20,7 +26,8 @@ def info() -> None:
     """Show the current configuration (sanity check that .env loads)."""
     typer.echo(f"Watchlist : {', '.join(settings.watchlist_tickers)}")
     typer.echo(f"DB        : {settings.database_url}")
-    typer.echo(f"Model     : {settings.sentiment_model}")
+    typer.echo(f"Qualify   : {settings.qualify_model}")
+    typer.echo(f"Sentiment : {settings.sentiment_model}")
     typer.echo(f"Schwab    : {'set' if settings.schwab_app_key else 'MISSING'}")
     typer.echo(f"X token   : {'set' if settings.x_bearer_token else 'MISSING'}")
     typer.echo(f"X client  : {'set' if settings.x_client_id else 'MISSING'}")
@@ -228,9 +235,71 @@ def ingest_posts(
 
 
 @app.command()
-def enrich() -> None:
+def enrich(
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            help="Maximum posts/pairs to process per enrichment stage.",
+        ),
+    ] = 50,
+    ensure_prices: Annotated[
+        bool,
+        typer.Option(
+            "--ensure-prices/--no-ensure-prices",
+            help="Fetch missing Schwab daily bars for extracted tickers.",
+        ),
+    ] = True,
+    price_days: Annotated[
+        int,
+        typer.Option(
+            "--price-days",
+            help="Calendar days after each post timestamp to ensure price coverage for.",
+        ),
+    ] = settings.enrichment_price_days,
+) -> None:
     """Extract tickers and score sentiment for ingested posts. (Steps 4-5)"""
-    typer.echo("Not implemented yet — see documentation/plan.md, Steps 4-5.")
+    if limit < 1:
+        raise typer.BadParameter("--limit must be at least 1")
+    if price_days < 1:
+        raise typer.BadParameter("--price-days must be at least 1")
+
+    try:
+        ticker_result = qualify_and_extract_tickers(limit=limit)
+        sentiment_result = score_missing_sentiments(limit=limit)
+
+        price_result = None
+        if ensure_prices:
+            price_result = ensure_price_bars_for_ticker_dates(
+                ticker_result.ticker_dates,
+                days=price_days,
+            )
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    except APIError as exc:
+        typer.secho(f"Anthropic API request failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    typer.echo(
+        "Qualified "
+        f"{ticker_result.qualified}/{ticker_result.qualified_checked} posts "
+        f"({ticker_result.rejected} rejected)."
+    )
+    typer.echo(
+        f"Ran ticker extraction for {ticker_result.extraction_checked} posts; "
+        f"upserted {ticker_result.ticker_rows_upserted} post_tickers rows."
+    )
+    typer.echo(
+        f"Scored sentiment for {sentiment_result.scored}/{sentiment_result.checked} "
+        "post/ticker pairs."
+    )
+    if price_result is not None:
+        typer.echo(
+            f"Checked prices for {price_result.checked_tickers} tickers; "
+            f"fetched {price_result.fetched_tickers}, "
+            f"upserted {price_result.upserted_rows} rows."
+        )
 
 
 @app.command()

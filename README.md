@@ -8,9 +8,9 @@ The core research question:
 > *"When a stock is mentioned on X under conditions **C** (high positive sentiment, a mention-volume
 > spike, certain account types…), does it outperform over the next **N** days?"*
 
-The pipeline ingests X posts, extracts stock tickers, scores sentiment with a cheap LLM
-(Claude Haiku), joins everything against daily price data, and **backtests signal definitions** to rank
-which mention-conditions historically preceded outperformance.
+The pipeline ingests X posts, qualifies stock-specific trade intelligence, extracts stock tickers,
+scores sentiment with a cheap LLM (Claude Haiku), joins everything against daily price data, and
+**backtests signal definitions** to rank which mention-conditions historically preceded outperformance.
 
 > ⚠️ **Disclaimer:** This is a research/educational tool, **not financial advice**. Backtested results
 > do not guarantee future performance. Use of the X API must comply with X's Terms of Service.
@@ -21,7 +21,7 @@ which mention-conditions historically preceded outperformance.
 
 ```
    X API ─────► ingest posts ─┐
- (usage-based)                ├─► enrich (tickers + Haiku sentiment) ─► PostgreSQL
+ (usage-based)                ├─► enrich (qualify + tickers + sentiment) ─► PostgreSQL
   Schwab API ─► ingest prices ┘                                              │
                                                                             ▼
                                                           backtest / strategy engine
@@ -67,7 +67,7 @@ uv run xmarket schwab-login
 uv run xmarket ingest-prices --days 30  # daily OHLCV for your watchlist (Schwab)
 uv run xmarket x-login                  # one-time X OAuth login for your following feed
 uv run xmarket ingest-posts --source following --max-posts 100
-uv run xmarket enrich             # ticker extraction + Haiku sentiment (cached)
+uv run xmarket enrich             # qualify + ticker extraction + Haiku sentiment (cached)
 
 # 6. Backtest a signal
 uv run xmarket backtest --signal positive_high --horizon 5
@@ -91,7 +91,9 @@ All config is loaded from `.env` via `pydantic-settings`. Copy `.env.example` an
 | `X_CLIENT_SECRET`   | X OAuth 2.0 client secret, if your app uses one |
 | `X_REDIRECT_URI`    | X OAuth redirect URI; must match developer portal |
 | `X_USER_TOKEN_PATH` | Local cached X user token path               |
-| `ANTHROPIC_API_KEY` | For Claude Haiku sentiment scoring           |
+| `ANTHROPIC_API_KEY` | For Claude Haiku qualification, ticker extraction, and sentiment scoring |
+| `QUALIFY_MODEL`     | Claude model used for qualification and ticker extraction |
+| `SENTIMENT_MODEL`   | Claude model used for sentiment scoring      |
 | `WATCHLIST`         | Comma-separated tickers to track             |
 | `API_KEYS`          | Comma-separated API keys for the FastAPI auth|
 
@@ -118,7 +120,7 @@ tests/            unit + API tests
 - [ ] Step 1 — raw PostgreSQL schema & migrations
 - [ ] Step 2 — Price ingestion (Charles Schwab Trader API)
 - [ ] Step 3 — X ingestion
-- [ ] Step 4 — Ticker extraction
+- [ ] Step 4 — Qualification + ticker extraction
 - [ ] Step 5 — LLM sentiment (Claude Haiku)
 - [ ] Step 6 — Signal & backtest engine
 - [ ] Step 7 — Secured FastAPI

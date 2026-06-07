@@ -36,9 +36,14 @@ class Settings(BaseSettings):
     x_redirect_uri: str = "http://127.0.0.1:8001/x/callback"
     x_user_token_path: str = ".x_user_token.json"
 
-    # Anthropic / sentiment
+    # Anthropic / enrichment
     anthropic_api_key: str = ""
-    sentiment_model: str = "claude-haiku-4-5-20251001"
+    qualify_model: str = "claude-haiku-4-5"
+    sentiment_model: str = "claude-haiku-4-5"
+    qualify_prompt_version: str = "qualify-v1"
+    ticker_prompt_version: str = "ticker-v1"
+    sentiment_prompt_version: str = "sentiment-v1"
+    enrichment_price_days: int = 30
 
     # Application
     watchlist: str = "AAPL,TSLA,NVDA,MSFT,AMZN"

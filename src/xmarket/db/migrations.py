@@ -23,8 +23,7 @@ class Migration:
 def discover_migrations() -> list[Migration]:
     """Return SQL migration files in filename order."""
     return [
-        Migration(version=path.stem, path=path)
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql"))
+        Migration(version=path.stem, path=path) for path in sorted(MIGRATIONS_DIR.glob("*.sql"))
     ]
 
 
