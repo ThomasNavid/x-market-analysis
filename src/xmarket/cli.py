@@ -774,11 +774,5 @@ def backtest(
     _print_backtest_summary(result)
 
 
-@app.command()
-def serve() -> None:
-    """Run the FastAPI server. (Step 7)"""
-    typer.echo("Not implemented yet — see documentation/plan.md, Step 7.")
-
-
 if __name__ == "__main__":
     app()

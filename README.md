@@ -27,10 +27,11 @@ scores sentiment with a cheap LLM (Claude Haiku), joins everything against daily
                                                           backtest / strategy engine
                                                                             │
                                                                             ▼
-                                                       secured FastAPI  (read results + run jobs)
+                                                       CLI reports + saved backtest runs
 ```
 
-Scheduled jobs (APScheduler) keep data fresh; a secured FastAPI exposes results and lets you trigger jobs.
+The `xmarket pipeline` command runs the current flow end to end; focused commands remain available for
+debugging and reruns.
 
 ## Tech stack
 
@@ -39,12 +40,11 @@ Scheduled jobs (APScheduler) keep data fresh; a secured FastAPI exposes results 
 - **httpx** → X API v2 ingestion (usage-aware, rate-limited)
 - **Charles Schwab Trader API** (via [`schwab-py`](https://github.com/alexgolec/schwab-py)) for daily OHLCV — real brokerage data, swappable behind a `PriceProvider` interface
 - **Claude Haiku** (`anthropic` SDK) for cheap, cached, structured sentiment scoring
-- **FastAPI** + Uvicorn, API-key auth, `slowapi` rate limiting
 - **pytest**, **ruff**, **mypy**, GitHub Actions CI
 
 ## Quickstart
 
-> Status: 🚧 early development — scaffolding in progress. See [`documentation/plan.md`](documentation/plan.md).
+> Status: CLI research pipeline is implemented; see [`documentation/plan.md`](documentation/plan.md).
 
 ```bash
 # 1. Clone + install
@@ -74,8 +74,10 @@ uv run xmarket backtest --signal positive_high --horizon 5
 uv run xmarket pipeline
 uv run xmarket report-qualified --limit 25
 
-# 7. Serve the API
-uv run xmarket serve              # docs at http://localhost:8000/docs
+# 7. Run checks
+uv run ruff check .
+uv run mypy src tests
+uv run pytest
 ```
 
 ## Configuration
@@ -97,41 +99,39 @@ All config is loaded from `.env` via `pydantic-settings`. Copy `.env.example` an
 | `QUALIFY_MODEL`     | Claude model used for qualification and ticker extraction |
 | `SENTIMENT_MODEL`   | Claude model used for sentiment scoring      |
 | `WATCHLIST`         | Comma-separated tickers to track             |
-| `API_KEYS`          | Comma-separated API keys for the FastAPI auth|
 
 Secrets live only in `.env` (git-ignored). Only `.env.example` is committed.
 
 ## Project layout
 
 ```
-src/xmarket/      ingest/ · enrich/ · analysis/ · api/ · jobs/ · db/
+src/xmarket/      ingest/ · enrich/ · analysis/ · db/ · cli.py
 documentation/    plan.md · architecture.md · strategy-methodology.md
 migrations/       raw SQL database migrations
-tests/            unit + API tests
+tests/            unit tests
 ```
 
 ## Documentation
 
 - [Commands cheat sheet](documentation/commands.md) — every command you'll need, explained
 - [Build plan](documentation/plan.md) — step-by-step roadmap and decisions
-- Architecture notes & strategy methodology (added as the project matures)
+- [Architecture notes](documentation/architecture.md)
+- [Strategy methodology](documentation/strategy-methodology.md)
 
 ## Roadmap
 
-- [ ] Step 0 — Project scaffold & hygiene
-- [ ] Step 1 — raw PostgreSQL schema & migrations
-- [ ] Step 2 — Price ingestion (Charles Schwab Trader API)
-- [ ] Step 3 — X ingestion
-- [ ] Step 4 — Qualification + ticker extraction
-- [ ] Step 5 — LLM sentiment (Claude Haiku)
+- [x] Step 0 — Project scaffold & hygiene
+- [x] Step 1 — raw PostgreSQL schema & migrations
+- [x] Step 2 — Price ingestion (Charles Schwab Trader API)
+- [x] Step 3 — X ingestion
+- [x] Step 4 — Qualification + ticker extraction
+- [x] Step 5 — LLM sentiment (Claude Haiku)
 - [x] Step 6 — Signal & backtest engine
 - [x] Step 6.5 — Pipeline orchestration CLI
 - [x] Step 6.6 — Rich CLI progress and summaries
 - [x] Step 6.7 — Qualified post report CLI
-- [ ] Step 7 — Secured FastAPI
-- [ ] Step 8 — Scheduling
-- [ ] Step 9 — Tests, CI, docs polish
+- [x] Step 7 — Tests, CI, docs polish
 
 ## License
 
-TBD (consider MIT for a public portfolio project).
+MIT. See [LICENSE](LICENSE).

@@ -43,9 +43,8 @@ Your project's own commands. `xmarket` exists because of the `[project.scripts]`
 | `uv run xmarket report-qualified --limit 25` | Inspect qualified posts, extracted tickers, and sentiment/rationale. | ✅ |
 | `uv run xmarket backtest --signal positive_high --horizon 5` | Backtest a built-in signal over price history and save the run. | ✅ |
 | `uv run xmarket pipeline` | Run ingest, enrich, price coverage, and both built-in backtests with Rich progress output. | ✅ |
-| `uv run xmarket serve` | Run the FastAPI server (docs at http://localhost:8000/docs). | 🚧 Step 7 |
 
-✅ = works now · 🚧 = stub, prints "not implemented yet" until that build step is done.
+✅ = works now.
 
 ---
 
@@ -155,10 +154,11 @@ docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM price
 | `uv run pytest -q` | Run tests, quiet output. |
 | `uv run pytest tests/test_config.py` | Run one test file. |
 | `uv run pytest -k watchlist` | Run only tests whose name matches "watchlist". |
+| `uv run ruff format --check .` | Verify formatting without changing files. |
 | `uv run ruff check .` | Lint the code (style + common bugs). |
 | `uv run ruff check --fix .` | Auto-fix the issues that can be fixed safely. |
 | `uv run ruff format .` | Auto-format the code. |
-| `uv run mypy src` | Type-check the code. |
+| `uv run mypy src tests` | Type-check the code and tests. |
 
 ---
 

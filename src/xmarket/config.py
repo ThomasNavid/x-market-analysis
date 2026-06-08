@@ -47,18 +47,12 @@ class Settings(BaseSettings):
 
     # Application
     watchlist: str = "AAPL,TSLA,NVDA,MSFT,AMZN"
-    api_keys: str = "dev-local-key"
     log_level: str = "INFO"
 
     @property
     def watchlist_tickers(self) -> list[str]:
         """Watchlist as a clean, upper-cased list of tickers."""
         return [t.strip().upper() for t in self.watchlist.split(",") if t.strip()]
-
-    @property
-    def api_key_set(self) -> set[str]:
-        """Valid API keys as a set for fast membership checks."""
-        return {k.strip() for k in self.api_keys.split(",") if k.strip()}
 
 
 @lru_cache

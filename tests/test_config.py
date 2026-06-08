@@ -8,11 +8,6 @@ def test_watchlist_parses_to_clean_list() -> None:
     assert s.watchlist_tickers == ["AAPL", "TSLA", "NVDA"]
 
 
-def test_api_keys_parse_to_set() -> None:
-    s = Settings(api_keys="key1, key2 ,key1")
-    assert s.api_key_set == {"key1", "key2"}
-
-
 def test_enrichment_models_are_configurable() -> None:
     s = Settings(
         qualify_model="claude-haiku-4-5",

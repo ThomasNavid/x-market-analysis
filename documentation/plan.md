@@ -13,7 +13,7 @@ score sentiment with an LLM (Claude Haiku, cheap) → join against price data �
 definitions → rank strategies by forward returns.
 
 This is **both a public GitHub portfolio project and a personal trading tool**, so it needs clean code,
-a secured FastAPI, tests, and good docs. X API access is sorted (usage-based billing). The DB is
+a useful CLI, tests, CI, and good docs. X API access is sorted (usage-based billing). The DB is
 **plain PostgreSQL with raw SQL migrations** for portability and learning (runs locally in Docker, deploys to
 Supabase/Neon/RDS unchanged).
 
@@ -37,11 +37,10 @@ Supabase/Neon/RDS unchanged).
                                                           └──────┬───────┘
                                                                  ▼
                                                           ┌──────────────┐
-                                                          │  FastAPI     │ ◄── API-key / JWT auth
-                                                          │ (read API +  │
-                                                          │  run jobs)   │
+                                                          │ CLI reports  │
+                                                          │ + saved runs │
                                                           └──────────────┘
-   APScheduler / cron drives ingest + enrich on a schedule.
+   `xmarket pipeline` orchestrates the current end-to-end flow.
 ```
 
 ---
@@ -58,11 +57,9 @@ Supabase/Neon/RDS unchanged).
 | X ingestion          | `httpx` against X API v2 (usage-based)       | Async, simple |
 | Price data           | **Charles Schwab Trader API** via `schwab-py` | Real brokerage data; same API can trade later. Behind a `PriceProvider` interface so it's swappable |
 | Sentiment            | Claude **Haiku** via `anthropic` SDK          | Cheap, batchable, structured output |
-| API                  | FastAPI + Uvicorn                            | Async, auto OpenAPI docs |
-| Auth                 | API-key header + optional JWT                | Simple to demo, real security |
-| Scheduling           | APScheduler in-process (cron-compatible)     | No extra infra |
 | Config               | `pydantic-settings` + `.env`                  | Typed, 12-factor, secrets out of git |
-| Testing              | `pytest` + `pytest-asyncio`                   | Standard |
+| CLI UX               | Typer + Rich                                 | Friendly command surface and progress output |
+| Testing              | `pytest`                                     | Standard |
 | Lint/format          | `ruff` + `mypy`                               | Portfolio polish |
 | CI                   | GitHub Actions (lint + test)                 | Public-repo quality signal |
 
@@ -92,19 +89,13 @@ x-market-analysis/
 │   │   ├── posts.py               # fetch + persist posts
 │   │   └── prices.py              # PriceProvider interface + Schwab impl
 │   ├── enrich/
-│   │   ├── tickers.py             # LLM qualification + ticker resolution
-│   │   └── sentiment.py           # Claude Haiku sentiment (batched, cached)
+│   │   ├── reports.py             # qualified post/sentiment report queries
+│   │   ├── sentiment.py           # Claude Haiku sentiment (cached)
+│   │   └── tickers.py             # LLM qualification + ticker resolution
 │   ├── analysis/
-│   │   ├── signals.py             # signal definitions (declarative conditions C)
-│   │   ├── backtest.py            # forward-return computation + stats
-│   │   └── strategies.py          # rank/compare strategies
-│   ├── api/
-│   │   ├── main.py                # FastAPI app
-│   │   ├── auth.py                # API-key / JWT dependency
-│   │   └── routers/               # posts, signals, backtests, jobs
-│   ├── jobs/
-│   │   └── scheduler.py           # APScheduler wiring
-│   └── cli.py                     # `xmarket ingest|enrich|backtest|serve`
+│   │   ├── signals.py             # built-in signal definitions
+│   │   └── backtest.py            # forward-return computation + stats
+│   └── cli.py                     # `xmarket ingest|enrich|backtest|pipeline`
 └── tests/
 ```
 
@@ -215,8 +206,8 @@ CLI: `xmarket backtest --signal positive_high --horizon N`.
 missing Schwab price coverage, then backtest `positive_high` and `negative_high`. Keep individual commands
 available for debugging and focused reruns. Options include source/max posts/page size, enrich limit,
 price coverage toggle, signal list, horizon, min samples, and skip flags for ingest/enrich/backtest.
-**Outcome:** one command exercises the full system so far, and the same orchestration can later back the
-Step 7 job API and Step 8 scheduler.
+**Outcome:** one command exercises the full system so far while individual commands remain available for
+debugging and focused reruns.
 
 ### Step 6.6 — Rich CLI progress and summaries
 Use Rich for CLI readability: config/enrich/backtest summary tables, status spinners around long-running
@@ -230,29 +221,15 @@ sentiment labels/scores/rationales, qualification reasons, and post text preview
 `--limit`, `--ticker`, `--min-score` (absolute sentiment score), `--since`, and `--text-chars`.
 **Outcome:** fast manual QA of qualification and sentiment quality before trusting backtests.
 
-### Step 7 — FastAPI (secured) + portfolio surface
-`api/main.py` with routers: `/posts`, `/signals`, `/backtests` (read results),
-`/jobs` (trigger ingest/enrich/backtest).
-`api/auth.py`: API-key header dependency (keys hashed) for write/job routes; read routes optionally
-public for the demo. JWT option documented for multi-user.
-Rate limiting (`slowapi`), CORS, structured errors, auto OpenAPI at `/docs`.
-**Outcome:** `xmarket serve` → secured, documented API.
-
-### Step 8 — Scheduling
-`jobs/scheduler.py` (APScheduler): periodic ingest-posts, enrich, ingest-prices, nightly backtest refresh.
-**Outcome:** hands-off data freshness.
-
-### Step 9 — Tests, CI, docs polish
-`pytest` units (ticker extraction, signal matching, forward-return math) + API tests (TestClient) with a
-test DB; mock X + Anthropic + price calls. GitHub Actions: ruff + mypy + pytest on PR.
-Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. disclaimer).
+### Step 7 — Tests, CI, docs polish
+`pytest` units cover config parsing, enrichment helpers/reports, signal matching, forward-return math,
+dedupe, and aggregate metrics. GitHub Actions runs formatting, lint, type checks, and tests on PR/push.
+Finalize `README.md`, `architecture.md`, `strategy-methodology.md`, and command docs.
 
 ---
 
 ## Security & public-repo safeguards
 - All secrets via `.env` (git-ignored); only `.env.example` committed. X + Anthropic keys never in code.
-- API write/job endpoints require auth; API keys stored hashed.
-- Rate limiting + input validation (Pydantic) on all endpoints.
 - `.gitignore` covers `.env`, data dumps, caches, virtualenvs.
 - README disclaimer: educational/research, not financial advice; respect X API ToS.
 
@@ -274,8 +251,9 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. discla
 4. `xmarket enrich` → qualified posts produce `post_tickers` + `sentiments`; second run scores ~0 new
    and performs ~0 duplicate Schwab fetches for already-covered ticker/date ranges.
 5. `xmarket backtest --signal positive_high --horizon 5` → ranked forward-return stats; row in `backtest_runs`.
-6. `xmarket serve` → hit `/docs`; unauthenticated job call returns 401, authenticated returns 200.
-7. `pytest` green; GitHub Actions green on a PR.
+6. `xmarket pipeline` → ingest/enrich/price coverage/backtests complete with Rich progress output.
+7. `xmarket report-qualified --limit 25` → qualified posts and sentiment render in a table.
+8. `pytest` green; GitHub Actions green on a PR.
 
 ## Decisions locked
 - **Dependency tool:** uv.
@@ -283,7 +261,6 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md` (incl. discla
 - **Price provider:** Charles Schwab Trader API (individual) via `schwab-py`, behind a `PriceProvider`
   interface (swappable for Polygon/Alpha Vantage later). Requires a Schwab brokerage account + a
   registered developer app.
-- **API auth:** API-key for v1 (JWT/multi-user later).
 - **DB:** plain PostgreSQL with raw SQL migrations — deploy target left open (Supabase/Neon/Railway/RDS all viable).
 
 > ⚠️ **Disclaimer:** This is a research/educational tool, not financial advice. Backtested results do
