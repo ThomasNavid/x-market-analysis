@@ -265,3 +265,63 @@ Finalize `README.md`, `architecture.md`, `strategy-methodology.md`, and command 
 
 > ⚠️ **Disclaimer:** This is a research/educational tool, not financial advice. Backtested results do
 > not guarantee future performance.
+
+---
+
+## Platform revamp — Phase 1 (completed 2026-06-10)
+
+The project was restructured from a single-purpose X-sentiment pipeline (`xmarket` CLI, `src/xmarket/`)
+into a personal financial data platform (`findb` CLI, `src/findb/`). The `xmarket` entry point
+remains as a temporary alias.
+
+### What Phase 1 delivered
+
+**Package + CLI restructure**
+
+- Renamed package `xmarket` → `findb`; new layout separates shared infrastructure
+  (`src/findb/core/`) from feature logic (`src/findb/features/xsentiment/`).
+- Root CLI (`uv run findb`) owns platform-wide commands: `info`, `migrate`, `migrate-status`,
+  `schwab-login`, `ingest-prices`, `ingest-fundamentals`.
+- X-sentiment pipeline moved to the `findb x` sub-app: `login`, `ingest-posts`, `enrich`,
+  `report-qualified`, `backtest`, `pipeline`.
+
+**LLM provider routing (`core/llm/`)**
+
+- New provider-agnostic layer parses `provider:model` reference strings and dispatches to the
+  matching client.
+- `QUALIFY_MODEL` and `SENTIMENT_MODEL` accept `anthropic:<model>` or `ollama:<model>` refs.
+- Bare model names (e.g. `claude-haiku-4-5`) default to Anthropic to preserve existing database
+  cache keys without a data migration.
+- `OLLAMA_BASE_URL` setting enables local or remote Ollama instances.
+
+**Schwab fundamentals ingestion**
+
+- `migrations/004_fundamentals.sql`: new `fundamentals` table, PK `(ticker, captured_date)`,
+  raw JSONB column, `market_cap` stored in dollars.
+- `uv run findb ingest-fundamentals`: fetches via Schwab `GET /instruments?projection=fundamental`,
+  idempotent daily snapshot upsert for the watchlist.
+- Schwab research finding: **no news endpoint exists** in the Trader API; fundamentals are the
+  correct projection for financial ratios; rate limit is 120 req/min.
+
+**Home server deploy assets**
+
+- `deploy/home-server/`: Docker Compose stack for a `findb` Postgres database on a Windows PC.
+- `documentation/home-server.md`: full runbook covering Docker Desktop, Tailscale tunnel,
+  Ollama setup, Windows Firewall rules, and data migration from the local dev database.
+
+---
+
+## Planned later phases
+
+The following capabilities are prioritised for future build steps. They are recorded here as
+research findings and design intent, not commitments.
+
+| Phase | Capability | Notes |
+|-------|-----------|-------|
+| Quotes snapshots | `ingest-quotes` fetching real-time or delayed quote data from Schwab | Foundation for intraday signal work |
+| Intraday candles | `ingest-candles` with configurable interval/period | Requires Schwab `get_price_history` intraday params |
+| Option chains | `ingest-options` snapshot ingestion | High data volume; schema TBD |
+| Market movers | `ingest-movers` (Schwab movers endpoint) | Useful cross-signal for sentiment spikes |
+| Third-party news | `ingest-news` via Finnhub or similar | Schwab has no news endpoint; external provider required |
+| Connection pooling | `PgPool` or `pgBouncer` in front of home-server Postgres | Needed when multiple ingestion commands run concurrently |
+| Scheduled runs | Cron or cloud-agent triggered pipeline | Keeps the database current without manual runs |

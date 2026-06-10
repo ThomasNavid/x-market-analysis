@@ -8,6 +8,9 @@ A reference for every command you'll use day to day. Run all of these from the p
 > libraries), so you never have to "activate" anything or worry about clashing with other projects.
 > Rule of thumb: if it's a Python tool for *this* project, prefix it with `uv run`.
 
+> **Note on the `xmarket` alias:** the old `xmarket` entry point still resolves to the same app
+> during the transition period. Prefer `findb` in new scripts and documentation.
+
 ---
 
 ## 1. Environment & dependencies (`uv`)
@@ -23,32 +26,46 @@ A reference for every command you'll use day to day. Run all of these from the p
 
 ---
 
-## 2. The app CLI (`xmarket`)
+## 2. Core platform commands (`findb`)
 
-Your project's own commands. `xmarket` exists because of the `[project.scripts]` line in `pyproject.toml`.
+These commands manage the shared infrastructure — database, migrations, and Schwab market data.
+They live at the root of the `findb` CLI.
 
 | Command | What it does | Status |
 |---------|--------------|--------|
-| `uv run xmarket --help` | List all available commands. | ✅ |
-| `uv run xmarket <command> --help` | Show help for one command. | ✅ |
-| `uv run xmarket info` | Print current config — sanity-check that `.env` loaded and which keys are set. | ✅ |
-| `uv run xmarket migrate` | Apply pending raw SQL migrations from `migrations/`. | ✅ |
-| `uv run xmarket migrate-status` | Show unapplied SQL migrations. | ✅ |
-| `uv run xmarket schwab-login` | One-time Schwab OAuth login; caches a refreshable token. | ✅ |
-| `uv run xmarket ingest-prices --days 30` | Fetch daily OHLCV price data from Schwab into the `prices` table. | ✅ |
-| `uv run xmarket x-login` | One-time X OAuth login; caches a user token for your following feed. | ✅ |
-| `uv run xmarket ingest-posts --source following --max-posts 100` | Fetch your reverse-chronological X following feed into `posts`/`authors`. | ✅ |
-| `uv run xmarket ingest-posts --source search --max-posts 100` | Optional public cashtag search mode. | ✅ |
-| `uv run xmarket enrich` | Qualify posts, extract tickers, score sentiment, and fetch missing Schwab price bars. | ✅ |
-| `uv run xmarket report-qualified --limit 25` | Inspect qualified posts, extracted tickers, and sentiment/rationale. | ✅ |
-| `uv run xmarket backtest --signal positive_high --horizon 5` | Backtest a built-in signal over price history and save the run. | ✅ |
-| `uv run xmarket pipeline` | Run ingest, enrich, price coverage, and both built-in backtests with Rich progress output. | ✅ |
+| `uv run findb --help` | List all available commands. | ✅ |
+| `uv run findb <command> --help` | Show help for one command. | ✅ |
+| `uv run findb info` | Print current config — sanity-check that `.env` loaded and which keys are set. | ✅ |
+| `uv run findb migrate` | Apply pending raw SQL migrations from `migrations/`. | ✅ |
+| `uv run findb migrate-status` | Show unapplied SQL migrations. | ✅ |
+| `uv run findb schwab-login` | One-time Schwab OAuth login; caches a refreshable token. | ✅ |
+| `uv run findb ingest-prices --days 30` | Fetch daily OHLCV price data from Schwab into the `prices` table. | ✅ |
+| `uv run findb ingest-fundamentals` | Fetch a daily fundamentals snapshot from Schwab into the `fundamentals` table (watchlist, idempotent upsert). | ✅ |
 
 ✅ = works now.
 
 ---
 
-## 3. Database — local Postgres (`docker compose`)
+## 3. X-sentiment feature commands (`findb x`)
+
+These commands run the X-sentiment pipeline. They are mounted as a sub-app under `findb x`.
+
+| Command | What it does | Status |
+|---------|--------------|--------|
+| `uv run findb x --help` | List all X-sentiment commands. | ✅ |
+| `uv run findb x login` | One-time X OAuth login; caches a user token for your following feed. | ✅ |
+| `uv run findb x ingest-posts --source following --max-posts 100` | Fetch your reverse-chronological X following feed into `posts`/`authors`. | ✅ |
+| `uv run findb x ingest-posts --source search --max-posts 100` | Optional public cashtag search mode. | ✅ |
+| `uv run findb x enrich` | Qualify posts, extract tickers, score sentiment, and fetch missing Schwab price bars. | ✅ |
+| `uv run findb x report-qualified --limit 25` | Inspect qualified posts, extracted tickers, and sentiment/rationale. | ✅ |
+| `uv run findb x backtest --signal positive_high --horizon 5` | Backtest a built-in signal over price history and save the run. | ✅ |
+| `uv run findb x pipeline` | Run ingest, enrich, price coverage, and both built-in backtests with Rich progress output. | ✅ |
+
+✅ = works now.
+
+---
+
+## 4. Database — local Postgres (`docker compose`)
 
 The database runs in a Docker container defined by `docker-compose.yml`.
 
@@ -67,32 +84,33 @@ The database runs in a Docker container defined by `docker-compose.yml`.
 | `docker exec -it xmarket-db psql -U xmarket -d xmarket` | Open an interactive SQL shell. |
 | `docker exec xmarket-db psql -U xmarket -d xmarket -c '\dt'` | List all tables (one-off). |
 | `docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT * FROM prices LIMIT 5;'` | Run a quick query. |
+| `docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT ticker, captured_date, market_cap, pe_ratio FROM fundamentals ORDER BY captured_date DESC LIMIT 10;'` | Peek at the latest fundamentals snapshot. |
 
 Inside the interactive `psql` shell: `\dt` lists tables, `\d prices` describes a table, `\q` quits.
 
 ---
 
-## 4. Database migrations (raw SQL)
+## 5. Database migrations (raw SQL)
 
 Migrations are version control for your database schema (see `documentation/plan.md`, Step 1).
 This project uses plain PostgreSQL files in `migrations/` so you can learn the SQL directly.
 
 | Command | What it does |
 |---------|--------------|
-| `uv run xmarket migrate` | Apply all pending `.sql` migrations. |
-| `uv run xmarket migrate-status` | Show SQL files that have not been applied. |
+| `uv run findb migrate` | Apply all pending `.sql` migrations. |
+| `uv run findb migrate-status` | Show SQL files that have not been applied. |
 | `docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT * FROM schema_migrations;'` | Show migration history. |
 | `docker exec -i xmarket-db psql -U xmarket -d xmarket < migrations/001_initial_schema.sql` | Manually apply one SQL file while learning. |
 
 **Typical workflow when you change the schema:**
-1. Create a new file like `migrations/002_add_post_lang.sql`.
-2. Write the PostgreSQL change yourself, for example `ALTER TABLE posts ADD COLUMN source text;`.
-3. Run `uv run xmarket migrate`.
-4. Open `psql` and inspect the table with `\d posts`.
+1. Create a new file like `migrations/005_add_quotes.sql`.
+2. Write the PostgreSQL change yourself, for example `ALTER TABLE prices ADD COLUMN source text;`.
+3. Run `uv run findb migrate`.
+4. Open `psql` and inspect the table with `\d prices`.
 
 ---
 
-## 5. PostgreSQL essentials (psql + SQL)
+## 6. PostgreSQL essentials (psql + SQL)
 
 New to Postgres? This is the survival kit. First, open a SQL shell **inside** the database container:
 
@@ -131,6 +149,7 @@ You'll get a `xmarket=#` prompt. Everything below is typed at that prompt.
 | `SELECT * FROM prices ORDER BY date DESC LIMIT 5;` | Newest 5 rows. |
 | `SELECT symbol, count(*) FROM prices GROUP BY symbol;` | Count rows per symbol. |
 | `SELECT DISTINCT symbol FROM prices;` | List the unique symbols. |
+| `SELECT ticker, captured_date, market_cap, pe_ratio, eps FROM fundamentals WHERE ticker = 'AAPL' ORDER BY captured_date DESC LIMIT 5;` | Recent fundamentals for one ticker. |
 | `INSERT INTO authors (id, handle) VALUES ('123', 'someone');` | Add a row. |
 | `UPDATE posts SET source = 'x' WHERE id = 1;` | Change existing rows (always include a `WHERE`!). |
 | `DELETE FROM posts WHERE id = 1;` | Remove rows (always include a `WHERE`!). |
@@ -146,7 +165,7 @@ docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM price
 
 ---
 
-## 6. Tests, linting, type-checking
+## 7. Tests, linting, type-checking
 
 | Command | What it does |
 |---------|--------------|
@@ -162,7 +181,7 @@ docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM price
 
 ---
 
-## 7. Git basics (public GitHub project)
+## 8. Git basics (public GitHub project)
 
 | Command | What it does |
 |---------|--------------|
@@ -172,8 +191,8 @@ docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM price
 | `git push` | Upload commits to GitHub. |
 | `git log --oneline` | Compact history. |
 
-> ⚠️ **Never commit secrets.** `.env` and `.schwab_token.json` are git-ignored on purpose. Before
-> pushing, a quick `git status` should never show those files.
+> ⚠️ **Never commit secrets.** `.env`, `.schwab_token.json`, and `.x_user_token.json` are
+> git-ignored on purpose. Before pushing, a quick `git status` should never show those files.
 
 ---
 
@@ -182,9 +201,16 @@ docker exec xmarket-db psql -U xmarket -d xmarket -c 'SELECT count(*) FROM price
 Starting fresh (e.g. on a new machine after cloning):
 
 ```bash
-uv sync --extra dev                 # install everything
-cp .env.example .env                # then fill in your keys
-docker compose up -d                # start the database
-uv run xmarket migrate              # create the tables from raw SQL
-uv run xmarket info                 # confirm config loads
+uv sync --extra dev                         # install everything
+cp .env.example .env                        # then fill in your keys
+docker compose up -d                        # start the local database
+uv run findb migrate                        # create tables from raw SQL migrations
+uv run findb info                           # confirm config loads
+uv run findb schwab-login                   # one-time Schwab OAuth (caches token)
+uv run findb ingest-prices --days 30        # populate prices table
+uv run findb ingest-fundamentals            # populate fundamentals table
+uv run findb x login                        # one-time X OAuth
+uv run findb x ingest-posts --source following --max-posts 100
+uv run findb x enrich                       # qualify + ticker extraction + sentiment
+uv run findb x pipeline                     # or run the full pipeline in one command
 ```
