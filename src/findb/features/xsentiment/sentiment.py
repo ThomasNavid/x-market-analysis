@@ -6,11 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from anthropic import Anthropic
-
 from findb.config import settings
 from findb.core.db.connection import connect
-from findb.core.llm.anthropic_json import create_anthropic_client, create_json_message
+from findb.core.llm import create_json_completion
 
 SENTIMENT_SYSTEM = """You score stock-specific sentiment for a trading research pipeline.
 Return JSON only.
@@ -120,14 +118,10 @@ def _sentiment_prompt(item: PostTickerForSentiment) -> str:
     )
 
 
-def score_sentiment_for_post_ticker(
-    client: Anthropic,
-    item: PostTickerForSentiment,
-) -> SentimentScore:
-    """Ask Claude for stock-directional sentiment for one post/ticker pair."""
-    payload = create_json_message(
-        client,
-        model=settings.sentiment_model,
+def score_sentiment_for_post_ticker(item: PostTickerForSentiment) -> SentimentScore:
+    """Ask the configured LLM for stock-directional sentiment for one post/ticker pair."""
+    payload = create_json_completion(
+        settings.sentiment_model,
         system=SENTIMENT_SYSTEM,
         user=_sentiment_prompt(item),
         max_tokens=400,
@@ -189,8 +183,7 @@ def score_missing_sentiments(*, limit: int) -> SentimentEnrichmentResult:
     if not items:
         return SentimentEnrichmentResult(checked=0, scored=0)
 
-    client = create_anthropic_client()
-    sentiments = [score_sentiment_for_post_ticker(client, item) for item in items]
+    sentiments = [score_sentiment_for_post_ticker(item) for item in items]
     return SentimentEnrichmentResult(
         checked=len(items),
         scored=upsert_sentiments(sentiments),

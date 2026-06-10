@@ -38,6 +38,12 @@ class Settings(BaseSettings):
 
     # Anthropic / enrichment
     anthropic_api_key: str = ""
+
+    # Local LLM (Ollama, OpenAI-compatible API), e.g. "http://localhost:11434"
+    ollama_base_url: str = ""
+
+    # Enrichment models accept "provider:model" refs ("anthropic:claude-haiku-4-5"
+    # or "ollama:qwen3:14b"); bare model names default to anthropic.
     qualify_model: str = "claude-haiku-4-5"
     sentiment_model: str = "claude-haiku-4-5"
     qualify_prompt_version: str = "qualify-v1"

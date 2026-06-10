@@ -2,7 +2,7 @@
 
 import pytest
 
-from findb.core.llm.anthropic_json import LLMResponseError, extract_json_object
+from findb.core.llm import LLMResponseError, extract_json_object
 from findb.features.xsentiment.reports import parse_since_date
 from findb.features.xsentiment.sentiment import _label, _score
 from findb.features.xsentiment.tickers import _clean_ticker, _confidence

@@ -4,7 +4,6 @@ from typing import Annotated
 
 import httpx
 import typer
-from anthropic import APIError
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
@@ -17,6 +16,7 @@ from findb.core.cli_utils import (
     _parse_tickers,
     _print_kv_table,
 )
+from findb.core.llm import LLMError
 from findb.core.marketdata.prices import ensure_price_bars_for_ticker_dates
 from findb.features.xsentiment.backtest import BacktestResult, run_backtest
 from findb.features.xsentiment.posts import ingest_home_timeline_posts, ingest_recent_posts
@@ -365,6 +365,9 @@ def pipeline(
             progress.update(task, description="Pipeline complete")
 
         console.print("[bold green]Pipeline complete[/bold green]")
+    except LLMError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -376,9 +379,6 @@ def pipeline(
             f"X API request failed: {exc.response.status_code} {exc.response.text}",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1) from exc
-    except APIError as exc:
-        typer.secho(f"Anthropic API request failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from exc
 
 
@@ -548,11 +548,11 @@ def enrich(
                     ticker_result.ticker_dates,
                     days=price_days,
                 )
-    except RuntimeError as exc:
+    except LLMError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
-    except APIError as exc:
-        typer.secho(f"Anthropic API request failed: {exc}", fg=typer.colors.RED)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
 
     rows: list[tuple[str, object]] = [

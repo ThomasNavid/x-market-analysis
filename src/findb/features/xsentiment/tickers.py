@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from anthropic import Anthropic
 from psycopg.types.json import Jsonb
 
 from findb.config import settings
 from findb.core.db.connection import connect
-from findb.core.llm.anthropic_json import create_anthropic_client, create_json_message
+from findb.core.llm import create_json_completion
 
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{0,5}(?:[.-][A-Z])?$")
 
@@ -168,11 +167,10 @@ def fetch_posts_needing_ticker_extraction(*, limit: int) -> list[PostForEnrichme
             ]
 
 
-def qualify_post(client: Anthropic, post: PostForEnrichment) -> Qualification:
-    """Ask Claude whether one post should proceed to ticker extraction."""
-    payload = create_json_message(
-        client,
-        model=settings.qualify_model,
+def qualify_post(post: PostForEnrichment) -> Qualification:
+    """Ask the configured LLM whether one post should proceed to ticker extraction."""
+    payload = create_json_completion(
+        settings.qualify_model,
         system=QUALIFICATION_SYSTEM,
         user=_post_prompt(post),
         max_tokens=300,
@@ -186,11 +184,10 @@ def qualify_post(client: Anthropic, post: PostForEnrichment) -> Qualification:
     )
 
 
-def extract_tickers_for_post(client: Anthropic, post: PostForEnrichment) -> list[ExtractedTicker]:
-    """Ask Claude to resolve canonical tickers for one qualified post."""
-    payload = create_json_message(
-        client,
-        model=settings.qualify_model,
+def extract_tickers_for_post(post: PostForEnrichment) -> list[ExtractedTicker]:
+    """Ask the configured LLM to resolve canonical tickers for one qualified post."""
+    payload = create_json_completion(
+        settings.qualify_model,
         system=TICKER_SYSTEM,
         user=_post_prompt(post),
         max_tokens=600,
@@ -316,17 +313,15 @@ def qualify_and_extract_tickers(*, limit: int) -> TickerEnrichmentResult:
     if limit < 1:
         raise ValueError("limit must be at least 1")
 
-    client = create_anthropic_client()
-
     qualification_posts = fetch_posts_needing_qualification(limit=limit)
-    qualifications = [qualify_post(client, post) for post in qualification_posts]
+    qualifications = [qualify_post(post) for post in qualification_posts]
     upsert_qualifications(qualifications)
 
     extraction_posts = fetch_posts_needing_ticker_extraction(limit=limit)
     ticker_rows = 0
     ticker_dates: list[tuple[str, datetime]] = []
     for post in extraction_posts:
-        tickers = extract_tickers_for_post(client, post)
+        tickers = extract_tickers_for_post(post)
         ticker_rows += persist_ticker_extraction(post=post, tickers=tickers)
         ticker_dates.extend((ticker.ticker, post.created_at) for ticker in tickers)
 
