@@ -7,6 +7,7 @@ import typer
 from findb.config import settings
 from findb.core.cli_utils import _print_kv_table
 from findb.core.db.migrations import apply_pending_migrations, pending_migrations
+from findb.core.marketdata.fundamentals import ingest_fundamentals as ingest_fundamentals_job
 from findb.core.marketdata.prices import ingest_prices as ingest_prices_job
 from findb.core.marketdata.schwab_client import create_schwab_client_from_login
 from findb.features.xsentiment.cli import app as xsentiment_app
@@ -107,6 +108,34 @@ def ingest_prices(
         raise typer.Exit(1) from exc
 
     typer.echo(f"Upserted {count} price rows for {', '.join(ticker_list)}")
+
+
+@app.command("ingest-fundamentals")
+def ingest_fundamentals(
+    tickers: Annotated[
+        str | None,
+        typer.Option(
+            "--tickers",
+            help="Comma-separated tickers. Defaults to WATCHLIST from .env.",
+        ),
+    ] = None,
+) -> None:
+    """Fetch a daily fundamentals snapshot from Schwab into the fundamentals table."""
+    ticker_list = (
+        [ticker.strip().upper() for ticker in tickers.split(",") if ticker.strip()]
+        if tickers
+        else settings.watchlist_tickers
+    )
+    if not ticker_list:
+        raise typer.BadParameter("No tickers configured. Set WATCHLIST or pass --tickers.")
+
+    try:
+        count = ingest_fundamentals_job(ticker_list)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Upserted {count} fundamentals rows for {', '.join(ticker_list)}")
 
 
 app.add_typer(
