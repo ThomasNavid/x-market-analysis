@@ -1,0 +1,26 @@
+# Home-server Postgres for the findb platform (runs on the Windows PC).
+# This is separate from the repo-root docker-compose.yml used for local dev on the Mac.
+# Usage: copy this folder to the PC, create .env from .env.example, then `docker compose up -d`.
+# Full runbook: documentation/home-server.md
+services:
+  db:
+    image: postgres:16
+    container_name: findb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: findb
+      # Required — set in .env next to this file (see .env.example).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/home-server/.env}
+      POSTGRES_DB: findb
+    ports:
+      - "5432:5432"
+    volumes:
+      - findb_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U findb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  findb_pgdata:
