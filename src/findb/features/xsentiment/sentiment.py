@@ -8,9 +8,9 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from xmarket.config import settings
-from xmarket.db.connection import connect
-from xmarket.enrich.anthropic_json import create_anthropic_client, create_json_message
+from findb.config import settings
+from findb.core.db.connection import connect
+from findb.core.llm.anthropic_json import create_anthropic_client, create_json_message
 
 SENTIMENT_SYSTEM = """You score stock-specific sentiment for a trading research pipeline.
 Return JSON only.

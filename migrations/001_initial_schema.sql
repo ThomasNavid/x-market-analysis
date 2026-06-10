@@ -1,7 +1,7 @@
 -- Initial PostgreSQL schema for x-market-analysis.
 --
 -- Run through the project migration command:
---   uv run xmarket migrate
+--   uv run findb migrate
 --
 -- Or manually while learning:
 --   docker exec -i xmarket-db psql -U xmarket -d xmarket < migrations/001_initial_schema.sql

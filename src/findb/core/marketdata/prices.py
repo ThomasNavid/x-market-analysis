@@ -4,13 +4,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
-from schwab import auth
-
-from xmarket.config import settings
-from xmarket.db.connection import connect
+from findb.core.db.connection import connect
+from findb.core.marketdata.schwab_client import create_schwab_client_from_token
 
 
 @dataclass(frozen=True)
@@ -34,46 +31,6 @@ class PriceEnsureResult:
     checked_tickers: int
     fetched_tickers: int
     upserted_rows: int
-
-
-def validate_schwab_config() -> None:
-    """Fail early if required Schwab settings are missing."""
-    missing = []
-    if not settings.schwab_app_key:
-        missing.append("SCHWAB_APP_KEY")
-    if not settings.schwab_app_secret:
-        missing.append("SCHWAB_APP_SECRET")
-
-    if missing:
-        joined = ", ".join(missing)
-        raise RuntimeError(f"Missing Schwab config: {joined}. Add it to .env first.")
-
-
-def create_schwab_client_from_login() -> Any:
-    """Run Schwab OAuth if needed and return an authenticated client."""
-    validate_schwab_config()
-    return auth.easy_client(
-        api_key=settings.schwab_app_key,
-        app_secret=settings.schwab_app_secret,
-        callback_url=settings.schwab_callback_url,
-        token_path=settings.schwab_token_path,
-    )
-
-
-def create_schwab_client_from_token() -> Any:
-    """Load an authenticated Schwab client from the cached token file."""
-    validate_schwab_config()
-    token_path = Path(settings.schwab_token_path)
-    if not token_path.exists():
-        raise RuntimeError(
-            f"Schwab token file not found at {token_path}. Run `uv run xmarket schwab-login` first."
-        )
-
-    return auth.client_from_token_file(
-        token_path=str(token_path),
-        api_key=settings.schwab_app_key,
-        app_secret=settings.schwab_app_secret,
-    )
 
 
 def _date_to_start_datetime(value: date) -> datetime:

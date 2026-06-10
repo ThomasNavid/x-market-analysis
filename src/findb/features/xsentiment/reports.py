@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Any
 
-from xmarket.config import settings
-from xmarket.db.connection import connect
+from findb.config import settings
+from findb.core.db.connection import connect
 
 
 @dataclass(frozen=True)

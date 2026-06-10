@@ -1,6 +1,6 @@
 """Smoke tests for configuration parsing."""
 
-from xmarket.config import Settings
+from findb.config import Settings
 
 
 def test_watchlist_parses_to_clean_list() -> None:

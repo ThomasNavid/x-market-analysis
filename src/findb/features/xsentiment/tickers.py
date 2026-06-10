@@ -10,9 +10,9 @@ from typing import Any
 from anthropic import Anthropic
 from psycopg.types.json import Jsonb
 
-from xmarket.config import settings
-from xmarket.db.connection import connect
-from xmarket.enrich.anthropic_json import create_anthropic_client, create_json_message
+from findb.config import settings
+from findb.core.db.connection import connect
+from findb.core.llm.anthropic_json import create_anthropic_client, create_json_message
 
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{0,5}(?:[.-][A-Z])?$")
 

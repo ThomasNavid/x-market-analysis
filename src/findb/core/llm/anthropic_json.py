@@ -7,7 +7,7 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from xmarket.config import settings
+from findb.config import settings
 
 
 class LLMResponseError(RuntimeError):

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from xmarket.analysis.backtest import (
+from findb.features.xsentiment.backtest import (
     BacktestSample,
     PriceClose,
     SignalCandidate,
@@ -13,7 +13,7 @@ from xmarket.analysis.backtest import (
     build_deduped_samples,
     build_sample,
 )
-from xmarket.analysis.signals import get_builtin_signal
+from findb.features.xsentiment.signals import get_builtin_signal
 
 
 def candidate(
@@ -115,7 +115,7 @@ def test_build_deduped_samples_keeps_earliest_per_ticker_entry_date(
         return prices
 
     monkeypatch.setattr(
-        "xmarket.analysis.backtest.fetch_closes_after_post",
+        "findb.features.xsentiment.backtest.fetch_closes_after_post",
         fake_fetch_closes_after_post,
     )
 

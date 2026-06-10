@@ -6,8 +6,8 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from xmarket.db.connection import connect
-from xmarket.ingest.x_client import (
+from findb.core.db.connection import connect
+from findb.features.xsentiment.x_client import (
     build_cashtag_query,
     create_x_bearer_client,
     create_x_user_client,

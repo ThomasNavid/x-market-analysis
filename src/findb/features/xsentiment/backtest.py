@@ -10,9 +10,9 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from xmarket.analysis.signals import BuiltInSignal, get_builtin_signal
-from xmarket.config import settings
-from xmarket.db.connection import connect
+from findb.config import settings
+from findb.core.db.connection import connect
+from findb.features.xsentiment.signals import BuiltInSignal, get_builtin_signal
 
 
 @dataclass(frozen=True)

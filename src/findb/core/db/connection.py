@@ -12,7 +12,7 @@ from typing import Any
 import psycopg
 from psycopg import Connection
 
-from xmarket.config import settings
+from findb.config import settings
 
 
 def normalize_database_url(database_url: str) -> str:

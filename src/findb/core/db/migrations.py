@@ -8,9 +8,10 @@ execute the rest in transactions, and record what ran.
 from dataclasses import dataclass
 from pathlib import Path
 
-from xmarket.db.connection import connect
+from findb.core.db.connection import connect
+from findb.core.paths import find_project_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = find_project_root()
 MIGRATIONS_DIR = PROJECT_ROOT / "migrations"
 
 

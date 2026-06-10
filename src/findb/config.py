@@ -2,7 +2,7 @@
 
 Import the shared `settings` object anywhere you need config:
 
-    from xmarket.config import settings
+    from findb.config import settings
     print(settings.database_url)
 """
 

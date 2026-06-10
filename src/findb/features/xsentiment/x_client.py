@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from xmarket.config import settings
+from findb.config import settings
 
 API_BASE_URL = "https://api.x.com"
 RECENT_SEARCH_URL = f"{API_BASE_URL}/2/tweets/search/recent"
@@ -69,7 +69,7 @@ def _load_x_user_token() -> dict[str, Any]:
     token_path = _token_path()
     if not token_path.exists():
         raise RuntimeError(
-            f"X user token file not found at {token_path}. Run `uv run xmarket x-login` first."
+            f"X user token file not found at {token_path}. Run `uv run findb x login` first."
         )
 
     return cast(dict[str, Any], json.loads(token_path.read_text(encoding="utf-8")))
@@ -152,7 +152,7 @@ def _oauth_code_from_callback(callback_url: str, *, expected_state: str) -> str:
     if "error" in params:
         raise RuntimeError(f"X OAuth failed: {params['error'][0]}")
     if params.get("state", [None])[0] != expected_state:
-        raise RuntimeError("X OAuth state mismatch. Run `uv run xmarket x-login` again.")
+        raise RuntimeError("X OAuth state mismatch. Run `uv run findb x login` again.")
     if "code" not in params:
         raise RuntimeError("X OAuth callback did not include an authorization code.")
 
@@ -188,9 +188,7 @@ def refresh_x_user_token(token: dict[str, Any]) -> dict[str, Any]:
     """Refresh and persist the cached X user token."""
     refresh_token = token.get("refresh_token")
     if not refresh_token:
-        raise RuntimeError(
-            "Cached X token has no refresh_token. Run `uv run xmarket x-login` again."
-        )
+        raise RuntimeError("Cached X token has no refresh_token. Run `uv run findb x login` again.")
 
     data = {
         "grant_type": "refresh_token",
